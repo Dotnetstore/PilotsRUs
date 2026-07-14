@@ -1,9 +1,26 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
+using PilotsRUs.Admin.App.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.AccessDeniedPath = "/Account/Login";
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
+builder.Services.AddAuthorization();
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<BearerTokenHandler>();
+builder.Services.AddHttpClient("Api", client => client.BaseAddress = new Uri("https+http://api"))
+    .AddHttpMessageHandler<BearerTokenHandler>();
 
 var app = builder.Build();
 
@@ -21,6 +38,7 @@ app.UseHttpsRedirection();
 
 app.UseRouting();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();

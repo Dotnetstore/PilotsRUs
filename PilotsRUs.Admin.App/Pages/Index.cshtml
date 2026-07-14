@@ -1,4 +1,4 @@
-﻿@page
+@page
 @model IndexModel
 @{
     ViewData["Title"] = "Home page";
@@ -6,5 +6,16 @@
 
 <div class="text-center">
     <h1 class="display-4">Welcome</h1>
+
+    @if (Model.CurrentUser is not null)
+    {
+        <p>Logged in as <strong>@Model.CurrentUser.Email</strong>@(Model.CurrentUser.Roles.Count > 0 ? $" ({string.Join(", ", Model.CurrentUser.Roles)})" : "")</p>
+        <p><a asp-page="/Account/Logout">Log out</a></p>
+    }
+    else
+    {
+        <p><a asp-page="/Account/Login">Log in</a></p>
+    }
+
     <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
 </div>
