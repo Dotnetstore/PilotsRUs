@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="PilotsRUs.Admin.App.Tests/PilotsRUs.Admin.App.Tests.csproj" />
+  <Project Path="PilotsRUs.Admin.App/PilotsRUs.Admin.App.csproj" />
+  <Project Path="PilotsRUs.API.WebApi.Tests/PilotsRUs.API.WebApi.Tests.csproj" />
+  <Project Path="PilotsRUs.API.WebApi/PilotsRUs.API.WebApi.csproj" />
+  <Project Path="PilotsRUs.AppHost.Tests/PilotsRUs.AppHost.Tests.csproj" />
+  <Project Path="PilotsRUs.AppHost/PilotsRUs.AppHost.csproj" />
+  <Project Path="PilotsRUs.ServiceDefaults/PilotsRUs.ServiceDefaults.csproj" />
+  <Project Path="PilotsRUs.Shared.SDK.Tests/PilotsRUs.Shared.SDK.Tests.csproj" />
+  <Project Path="PilotsRUs.Shared.SDK/PilotsRUs.Shared.SDK.csproj" />
+  <Project Path="PilotsRUs.User.App.Tests/PilotsRUs.User.App.Tests.csproj" />
+  <Project Path="PilotsRUs.User.App/PilotsRUs.User.App.csproj" />
+</Solution>
