@@ -98,11 +98,27 @@ public static class ManufacturerEndpoints
                 return Results.NotFound();
             }
 
-            // Hard delete, not deactivate - unlike Users, there's no session/lockout state tied to a
-            // Manufacturer row. Once Aircraft eventually references Manufacturer via FK this will need
-            // revisiting (decide the OnDelete behavior deliberately) - not in scope now, no FK exists yet.
+            // Blocks deletion rather than cascading - an AircraftModel (e.g. "Boeing 737 MAX 8") is itself
+            // meaningful reference data, not disposable state the way RefreshTokens are for ApplicationUser.
+            // The FK itself uses DeleteBehavior.Restrict; this pre-check turns what would otherwise be an
+            // unhandled 500 (FK violation) into a clean 409.
+            if (await dbContext.AircraftModels.AnyAsync(a => a.ManufacturerId == id))
+            {
+                return Results.Conflict($"Cannot delete '{manufacturer.Name}' - it still has aircraft models. Delete or reassign them first.");
+            }
+
             dbContext.Manufacturers.Remove(manufacturer);
-            await dbContext.SaveChangesAsync();
+
+            try
+            {
+                await dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Closes the TOCTOU gap between the AnyAsync check above and this delete (a model could be
+                // created concurrently between the check and the delete).
+                return Results.Conflict($"Cannot delete '{manufacturer.Name}' - it still has aircraft models. Delete or reassign them first.");
+            }
 
             return Results.NoContent();
         }).WithName("DeleteManufacturer");

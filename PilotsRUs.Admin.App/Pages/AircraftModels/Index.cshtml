@@ -1,0 +1,37 @@
+@page
+@model PilotsRUs.Admin.App.Pages.AircraftModels.IndexModel
+@{
+    ViewData["Title"] = "Aircraft Models";
+}
+
+<p><a asp-page="/AircraftModels/Create" class="btn btn-primary">Create new aircraft model</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Manufacturer</th>
+                    <th>Name</th>
+                    <th>ICAO type</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var aircraftModel in Model.AircraftModels)
+                {
+                    <tr>
+                        <td>@aircraftModel.ManufacturerName</td>
+                        <td>@aircraftModel.Name</td>
+                        <td>@aircraftModel.IcaoTypeDesignator</td>
+                        <td>
+                            <a asp-page="/AircraftModels/Edit" asp-route-id="@aircraftModel.Id">Edit</a>
+                            <text> | </text>
+                            <a asp-page="/AircraftModels/Delete" asp-route-id="@aircraftModel.Id">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

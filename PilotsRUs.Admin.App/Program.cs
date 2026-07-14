@@ -9,7 +9,8 @@ builder.AddServiceDefaults();
 // Add services to the container.
 builder.Services.AddRazorPages(options => options.Conventions
     .AuthorizeFolder("/Users", "AdminOnly")
-    .AuthorizeFolder("/Manufacturers"));
+    .AuthorizeFolder("/Manufacturers")
+    .AuthorizeFolder("/AircraftModels"));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

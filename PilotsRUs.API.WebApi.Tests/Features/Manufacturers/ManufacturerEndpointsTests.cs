@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using PilotsRUs.API.WebApi.Tests.Infrastructure;
+using PilotsRUs.Shared.SDK.AircraftModels;
 using PilotsRUs.Shared.SDK.Manufacturers;
 
 namespace PilotsRUs.API.WebApi.Tests.Features.Manufacturers;
@@ -98,6 +99,25 @@ public sealed class ManufacturerEndpointsTests(ApiFactory factory) : IClassFixtu
 
         var getResponse = await client.GetAsync($"/manufacturers/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_WithExistingAircraftModels_ReturnsConflict()
+    {
+        var (client, _) = await factory.CreateAuthenticatedClientAsync("manufacturers-delete-guard@pilotsrus.test", "P@ssw0rd123!");
+        var createResponse = await client.PostAsJsonAsync("/manufacturers", new CreateManufacturerRequest("Zenith Aircraft", null));
+        var manufacturer = await createResponse.Content.ReadFromJsonAsync<ManufacturerResponse>();
+        var modelResponse = await client.PostAsJsonAsync("/aircraft-models", new CreateAircraftModelRequest("CH 750", null, manufacturer!.Id));
+        var model = await modelResponse.Content.ReadFromJsonAsync<AircraftModelResponse>();
+
+        var blockedResponse = await client.DeleteAsync($"/manufacturers/{manufacturer.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, blockedResponse.StatusCode);
+
+        var deleteModelResponse = await client.DeleteAsync($"/aircraft-models/{model!.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteModelResponse.StatusCode);
+
+        var allowedResponse = await client.DeleteAsync($"/manufacturers/{manufacturer.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, allowedResponse.StatusCode);
     }
 
     [Fact]

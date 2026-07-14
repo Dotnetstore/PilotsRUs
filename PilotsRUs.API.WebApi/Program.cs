@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
+using PilotsRUs.API.WebApi.Features.AircraftModels;
 using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
 using PilotsRUs.API.WebApi.Features.Users;
@@ -45,6 +46,10 @@ using (var roleSeedingScope = app.Services.CreateScope())
 // CreateScope(), since this isn't an Identity concern.
 await ManufacturerSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
 
+// Must run after ManufacturerSeeder - resolves ManufacturerIds by name, which requires manufacturer rows
+// to already exist. Same unconditional/every-environment reasoning as ManufacturerSeeder.
+await AircraftModelSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
+
 if (app.Environment.IsDevelopment())
 {
     using var seederScope = app.Services.CreateScope();
@@ -60,6 +65,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapManufacturerEndpoints();
+app.MapAircraftModelEndpoints();
 
 var summaries = new[]
 {

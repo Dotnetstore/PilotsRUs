@@ -8,6 +8,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 {
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Manufacturer> Manufacturers => Set<Manufacturer>();
+    public DbSet<AircraftModel> AircraftModels => Set<AircraftModel>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -25,6 +26,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(m => m.Name).IsRequired().HasMaxLength(200);
             entity.Property(m => m.Code).HasMaxLength(20);
             entity.HasIndex(m => m.Name).IsUnique();
+        });
+
+        builder.Entity<AircraftModel>(entity =>
+        {
+            entity.Property(a => a.Name).IsRequired().HasMaxLength(200);
+            entity.Property(a => a.IcaoTypeDesignator).HasMaxLength(10);
+            entity.HasIndex(a => new { a.ManufacturerId, a.Name }).IsUnique();
+            entity.HasIndex(a => a.IcaoTypeDesignator).IsUnique().HasFilter("\"IcaoTypeDesignator\" IS NOT NULL");
+            entity.HasOne(a => a.Manufacturer).WithMany().HasForeignKey(a => a.ManufacturerId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

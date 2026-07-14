@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -37,7 +38,12 @@ public sealed class DeleteModel(IHttpClientFactory httpClientFactory) : PageMode
             return RedirectToPage("/Manufacturers/Index");
         }
 
-        ErrorMessage = "Delete failed.";
+        // DeleteManufacturer can now return Results.Conflict(string) when aircraft models still reference
+        // it - surface that specific message instead of a generic one, same pattern Create/Edit already
+        // use for the duplicate-name guard.
+        ErrorMessage = response.StatusCode == HttpStatusCode.Conflict
+            ? await response.Content.ReadFromJsonAsync<string>() ?? "Delete failed."
+            : "Delete failed.";
 
         var getResponse = await client.GetAsync($"/manufacturers/{Id}");
         if (getResponse.IsSuccessStatusCode)

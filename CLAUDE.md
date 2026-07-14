@@ -210,10 +210,9 @@ separate DbContext for domain entities, same as `RefreshToken` (see "Database" b
   `User.IsInRole("Admin")`.
 - **CRUD shape**: list/get/create/update/**hard delete** — no deactivate/reactivate, unlike Users. There's no
   session/lockout state tied to a lookup entity the way there is to a user account, so a soft-delete flag
-  would just be a boolean with no behavioral difference from a real delete. If/when a future `Aircraft`
-  entity references `Manufacturer` via FK, this will need revisiting — whoever adds that FK must deliberately
-  choose the `OnDelete` behavior rather than accepting EF's default; not designed for now since `Aircraft`
-  doesn't exist yet.
+  would just be a boolean with no behavioral difference from a real delete. Deleting a Manufacturer that
+  still has `AircraftModel` rows is now blocked (see "Aircraft Models" below) — the FK-`OnDelete` question
+  this section originally deferred has been resolved: `DeleteBehavior.Restrict`, not `Cascade`.
 - **Error handling**: no `IdentityResult` is involved here, so this doesn't reuse `UserValidationProblem`/
   `UserValidationError` (those are Identity-specific). The only validation rule (duplicate `Name`) uses
   `Results.Conflict(string)`, same as Users' last-active-admin guard — `Admin.App` reads it via
@@ -227,6 +226,49 @@ separate DbContext for domain entities, same as `RefreshToken` (see "Database" b
 - **Admin.App pages** (`Pages/Manufacturers/Index|Create|Edit|Delete.cshtml(.cs)`): same plain Bootstrap
   `.table`/`.card` style as Users. `Delete.cshtml(.cs)` mirrors `Deactivate.cshtml.cs`'s confirm-page shape
   but calls `DELETE` and is genuinely destructive/non-reversible, unlike a lockout toggle.
+
+## Aircraft Models
+
+Manufacturer's first dependent entity, and the first foreign-key relationship between two non-Identity
+entities in the solution — each `AircraftModel` (e.g. "Boeing 737 MAX 8") belongs to exactly one
+`Manufacturer`. `Data/AircraftModel.cs`: `Guid` PK, required `ManufacturerId` (mutable `{ get; set; }`, not
+`init`-only, since reassigning a model to a different manufacturer is a legitimate Edit operation), required
+`Name`, optional `IcaoTypeDesignator`. Unlike `Manufacturer.Code`, ICAO type designators (ICAO Doc 8643) ARE
+an official standardized registry, so seeded rows carry real best-effort codes rather than staying null.
+
+- **Naming**: the entity is `AircraftModel`, deliberately not bare `Model` — `@Model` is the pervasive Razor
+  implicit reference to the current `PageModel` instance in every `.cshtml` file in this codebase. This
+  isn't just a naming preference: a `foreach` loop variable literally named `model` (lowercase) in a
+  `.cshtml` file breaks the Razor parser outright (`RZ2001`/`RZ2005`/`RZ1011` — Razor's `@model` directive
+  grammar matches `@model.SomeProperty` anywhere in the file, not just the top-of-file directive), hit and
+  fixed while building `Pages/AircraftModels/Index.cshtml`. Avoid `model`/`Model` as a loop variable or local
+  identifier in any `.cshtml` file for this reason.
+- **Uniqueness and FK behavior**: `Name` is unique **per manufacturer** (composite index on
+  `(ManufacturerId, Name)`), not globally — two different manufacturers can reuse a model name.
+  `IcaoTypeDesignator` has its own filtered unique index (`WHERE "IcaoTypeDesignator" IS NOT NULL`) since
+  ICAO type designators are globally unique when present, but the column itself is nullable. The FK to
+  `Manufacturer` uses `DeleteBehavior.Restrict` (not `RefreshToken.UserId`'s `Cascade` — an `AircraftModel`
+  is itself meaningful reference data, not disposable session state), paired with an explicit pre-check in
+  `ManufacturerEndpoints.cs`'s `DeleteManufacturer` (`AnyAsync` scoped to the target's `ManufacturerId`)
+  that returns `Results.Conflict` before the delete, so a manufacturer with existing models can't be removed
+  without either deleting or reassigning them first — turning what would otherwise be an unhandled 500 (FK
+  violation) into the same clean 409 pattern used elsewhere.
+- **Seeding**: `Data/AircraftModelSeeder.cs` seeds a handful of models per seeded manufacturer, keyed by
+  manufacturer name (resolved to `ManufacturerId` via a dictionary lookup, skipping any manufacturer name
+  that isn't found rather than failing startup). Must run **after** `ManufacturerSeeder` in `Program.cs` for
+  exactly that reason — same unconditional/idempotent/every-environment pattern otherwise.
+- **Authorization**: same as Manufacturers — `.RequireAuthorization()` with no policy name on
+  `/aircraft-models/*`, `AuthorizeFolder("/AircraftModels")` with no policy argument on the Admin.App side,
+  nav link gated on `User.Identity?.IsAuthenticated`.
+- **Manufacturer-existence validation**: `POST`/`PUT` on `Features/AircraftModels/AircraftModelEndpoints.cs`
+  look up the referenced `ManufacturerId` first and return `Results.BadRequest(string)` if it doesn't exist,
+  before the duplicate-name check — a plain string body, read the same `ReadFromJsonAsync<string>()` way as
+  every other conflict/bad-request message in this codebase.
+- **Admin.App pages** (`Pages/AircraftModels/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
+  Manufacturers, plus the first `<select>`/`asp-items`/`SelectListItem`-driven dropdown in the codebase (no
+  earlier precedent existed) — `Create`/`Edit`'s PageModel populates a `List<SelectListItem>` from
+  `GET /manufacturers` and binds it via `asp-items="Model.ManufacturerOptions"`. This is the reference
+  pattern for any future FK-driven form (e.g. a later Aircraft → AircraftModel relationship).
 
 ## Architecture principles
 
@@ -251,10 +293,11 @@ conflict since they resolve via different service types — don't collapse them 
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
-  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.)
-  plus `RefreshTokens` and `Manufacturers` — the first business table (see "Manufacturers" above).
+  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`. Identity's own tables
+  (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, and `AircraftModels` (the
+  first FK relationship between two non-Identity entities — see "Aircraft Models" above).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
-  `AddManufacturers`). `dotnet ef migrations add
+  `AddManufacturers`, `AddAircraftModels`). `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
