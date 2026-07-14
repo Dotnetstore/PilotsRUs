@@ -1,0 +1,30 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.Manufacturers.EditModel
+@{
+    ViewData["Title"] = "Edit manufacturer";
+}
+
+<div class="card">
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="Input.Name" class="form-label"></label>
+                <input asp-for="Input.Name" class="form-control" />
+                <span asp-validation-for="Input.Name" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Code" class="form-label"></label>
+                <input asp-for="Input.Code" class="form-control" />
+                <span asp-validation-for="Input.Code" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a asp-page="/Manufacturers/Index" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

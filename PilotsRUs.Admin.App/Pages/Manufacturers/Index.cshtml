@@ -1,0 +1,35 @@
+@page
+@model PilotsRUs.Admin.App.Pages.Manufacturers.IndexModel
+@{
+    ViewData["Title"] = "Manufacturers";
+}
+
+<p><a asp-page="/Manufacturers/Create" class="btn btn-primary">Create new manufacturer</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var manufacturer in Model.Manufacturers)
+                {
+                    <tr>
+                        <td>@manufacturer.Name</td>
+                        <td>@manufacturer.Code</td>
+                        <td>
+                            <a asp-page="/Manufacturers/Edit" asp-route-id="@manufacturer.Id">Edit</a>
+                            <text> | </text>
+                            <a asp-page="/Manufacturers/Delete" asp-route-id="@manufacturer.Id">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

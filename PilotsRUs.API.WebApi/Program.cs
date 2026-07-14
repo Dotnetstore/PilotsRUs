@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
 using PilotsRUs.API.WebApi.Features.Auth;
+using PilotsRUs.API.WebApi.Features.Manufacturers;
 using PilotsRUs.API.WebApi.Features.Users;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,6 +39,12 @@ using (var roleSeedingScope = app.Services.CreateScope())
     await RoleSeeder.SeedRolesAsync(roleManager);
 }
 
+// Must also run after the migration block above - Manufacturers doesn't exist until migrations have
+// applied. Runs unconditionally (every environment), same reasoning as RoleSeeder - reference data needed
+// everywhere, not dev-only. Uses IDbContextFactory directly (already a singleton registration) rather than
+// CreateScope(), since this isn't an Identity concern.
+await ManufacturerSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
+
 if (app.Environment.IsDevelopment())
 {
     using var seederScope = app.Services.CreateScope();
@@ -52,6 +59,7 @@ app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
+app.MapManufacturerEndpoints();
 
 var summaries = new[]
 {

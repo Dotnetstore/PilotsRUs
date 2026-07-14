@@ -7,8 +7,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 // Add services to the container.
-builder.Services.AddRazorPages(options =>
-    options.Conventions.AuthorizeFolder("/Users", "AdminOnly"));
+builder.Services.AddRazorPages(options => options.Conventions
+    .AuthorizeFolder("/Users", "AdminOnly")
+    .AuthorizeFolder("/Manufacturers"));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

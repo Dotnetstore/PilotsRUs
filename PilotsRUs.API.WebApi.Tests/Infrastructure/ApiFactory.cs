@@ -100,4 +100,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
         return (client, user);
     }
+
+    public async Task<(HttpClient Client, ApplicationUser User)> CreateAuthenticatedClientAsync(string email, string password)
+    {
+        var user = await CreateUserAsync(email, password);
+
+        var client = CreateClient();
+        var loginResponse = await (await client.PostAsJsonAsync("/auth/login", new LoginRequest(email, password)))
+            .Content.ReadFromJsonAsync<LoginResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginResponse!.AccessToken);
+
+        return (client, user);
+    }
 }

@@ -16,11 +16,12 @@ three parts:
 The solution scaffold plus a working infra layer are in place: Postgres/EF Core (via Aspire), JWT-based
 login with rotating refresh tokens, role-based authorization (a single "Admin" role) with a full Users CRUD
 management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see "Authentication",
-"Authorization and Users CRUD", and "Database" below. Scope is
-deliberately **infra-only**: no business/domain entities (Pilot, Airline, Job, Aircraft, etc.) exist yet.
-Those come once that domain is defined; don't invent them speculatively. When adding new projects, register
-them in `PilotsRUs.slnx` (the XML-based solution format — add `<Project Path="..." />` entries, not a
-`.sln` file).
+"Authorization and Users CRUD", and "Database" below. **Manufacturer** (see "Manufacturers" below) is the
+first business/domain entity to ship, registering airplane manufacturers as the starting point for
+registering airplanes. Other domain entities (Pilot, Airline, Job, Aircraft, etc.) still don't exist; don't
+invent them speculatively — add them only as their own scoped features, following Manufacturer's pattern
+where it fits. When adding new projects, register them in `PilotsRUs.slnx` (the XML-based solution format —
+add `<Project Path="..." />` entries, not a `.sln` file).
 
 ## Project structure
 
@@ -183,6 +184,50 @@ A single "Admin" role (name defined once, in `Shared.SDK/Auth/AuthConstants.Admi
   (`OnPostReactivateAsync`), not a separate confirm page, since it's fully reversible; Deactivate gets its
   own confirm-page precisely because it isn't.
 
+## Manufacturers
+
+The first business/domain entity in the solution — registering airplanes starts with registering their
+manufacturers. `Data/Manufacturer.cs`: `Guid` PK (following `RefreshToken.Id`'s precedent — the only other
+non-Identity entity in the codebase), required unique `Name`, optional `Code` (there's no official
+standardized "manufacturer code" registry the way there is for ICAO/IATA airline/airport codes, so seeded
+rows leave it null; admins fill it in later via Edit). Lives in the single `ApplicationDbContext` — no
+separate DbContext for domain entities, same as `RefreshToken` (see "Database" below).
+
+- **Seeding**: `Data/ManufacturerSeeder.cs` seeds 10 real-world manufacturers relevant to MSFS 2024 aircraft
+  (Boeing, Airbus, Cessna, Cirrus, Embraer, Bombardier, Piper, Beechcraft, Mooney, Diamond Aircraft) on every
+  startup, unconditionally (every environment, not just Development) and idempotently — same pattern as
+  `RoleSeeder`, and for the same reason (reference data needed everywhere). Unlike `RoleSeeder`, this isn't
+  an Identity concern, so it resolves `IDbContextFactory<ApplicationDbContext>` directly from `app.Services`
+  (already a singleton registration) rather than going through `CreateScope()` — the first real use of the
+  "future non-Identity repository code" convention called out in "Database" below. Must run after the
+  `IsDevelopment()` migration block in `Program.cs`, same ordering constraint `RoleSeeder` has (querying a
+  table before migrations create it fails startup).
+- **Authorization**: `/manufacturers/*` endpoints (`Features/Manufacturers/ManufacturerEndpoints.cs`) use
+  `.RequireAuthorization()` with **no policy name** — deliberately *not* `"AdminOnly"`, since manufacturers
+  are reference/master data any authenticated user can manage, unlike Users. `Admin.App`'s
+  `Pages/Manufacturers` folder is gated the same way (`AuthorizeFolder("/Manufacturers")`, no policy
+  argument), and its nav link in `_Layout.cshtml` is conditioned on `User.Identity?.IsAuthenticated`, not
+  `User.IsInRole("Admin")`.
+- **CRUD shape**: list/get/create/update/**hard delete** — no deactivate/reactivate, unlike Users. There's no
+  session/lockout state tied to a lookup entity the way there is to a user account, so a soft-delete flag
+  would just be a boolean with no behavioral difference from a real delete. If/when a future `Aircraft`
+  entity references `Manufacturer` via FK, this will need revisiting — whoever adds that FK must deliberately
+  choose the `OnDelete` behavior rather than accepting EF's default; not designed for now since `Aircraft`
+  doesn't exist yet.
+- **Error handling**: no `IdentityResult` is involved here, so this doesn't reuse `UserValidationProblem`/
+  `UserValidationError` (those are Identity-specific). The only validation rule (duplicate `Name`) uses
+  `Results.Conflict(string)`, same as Users' last-active-admin guard — `Admin.App` reads it via
+  `ReadFromJsonAsync<string>()` the same way `Edit.cshtml.cs` already does for Users. Create/Update also wrap
+  `SaveChangesAsync` in a `catch (DbUpdateException)` returning the same `Conflict`, closing the TOCTOU gap
+  between the pre-check `AnyAsync` and the actual insert/update (two concurrent requests for the same `Name`
+  would otherwise surface as an unhandled 500 from the unique-index violation).
+- **No repository/service abstraction** — endpoints inline directly against a per-request
+  `ApplicationDbContext` from `IDbContextFactory<ApplicationDbContext>.CreateDbContextAsync()`, matching how
+  Users' endpoints inline directly against `UserManager` (no extra layer for a single vertical slice).
+- **Admin.App pages** (`Pages/Manufacturers/Index|Create|Edit|Delete.cshtml(.cs)`): same plain Bootstrap
+  `.table`/`.card` style as Users. `Delete.cshtml(.cs)` mirrors `Deactivate.cshtml.cs`'s confirm-page shape
+  but calls `DELETE` and is genuinely destructive/non-reversible, unlike a lockout toggle.
+
 ## Architecture principles
 
 - Modular monolith with vertical slice architecture, following SOLID principles
@@ -206,9 +251,10 @@ conflict since they resolve via different service types — don't collapse them 
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
-  `Data/RefreshToken.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens` —
-  no other business tables yet.
-- Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`). `dotnet ef migrations add
+  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.)
+  plus `RefreshTokens` and `Manufacturers` — the first business table (see "Manufacturers" above).
+- Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
+  `AddManufacturers`). `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
