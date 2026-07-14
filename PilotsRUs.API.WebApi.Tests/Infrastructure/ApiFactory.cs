@@ -54,7 +54,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         using var scope = Services.CreateScope();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var user = new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true };
+        var user = new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true, FirstName = "Test", LastName = "User" };
         var result = await userManager.CreateAsync(user, password);
         if (!result.Succeeded)
         {

@@ -34,6 +34,26 @@ public static class AuthServiceCollectionExtensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager();
 
+        // AddIdentityCore registers the default PasswordHasher<TUser> via TryAddScoped; this explicit
+        // (non-TryAdd) registration overrides it - same override pattern AddApplicationJwtAuth already
+        // uses for AddAuthentication(JwtBearerDefaults.AuthenticationScheme).
+        builder.Services.AddScoped<IPasswordHasher<ApplicationUser>, Argon2PasswordHasher>();
+
+        builder.Services.Configure<IdentityOptions>(options =>
+        {
+            options.User.RequireUniqueEmail = true;
+
+            // Intentionally permissive for pre-registration dev/seed purposes only - there is no
+            // registration endpoint yet (infra-only scope, see CLAUDE.md). Revisit once real user
+            // registration ships and a real password policy needs enforcing against user-chosen passwords.
+            options.Password.RequiredLength = 4;
+            options.Password.RequireDigit = false;
+            options.Password.RequireLowercase = false;
+            options.Password.RequireUppercase = false;
+            options.Password.RequireNonAlphanumeric = false;
+            options.Password.RequiredUniqueChars = 1;
+        });
+
         return builder;
     }
 

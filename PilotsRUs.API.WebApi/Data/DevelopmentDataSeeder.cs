@@ -8,8 +8,10 @@ namespace PilotsRUs.API.WebApi.Data;
 /// </summary>
 public static class DevelopmentDataSeeder
 {
-    public const string DefaultAdminEmail = "admin@pilotsrus.local";
-    public const string DefaultAdminPassword = "P@ssw0rd123!";
+    public const string DefaultAdminEmail = "hasse29@hotmail.com";
+    public const string DefaultAdminPassword = "admin";
+    public const string DefaultAdminFirstName = "Hans";
+    public const string DefaultAdminLastName = "Sjödin";
 
     public static async Task SeedDevelopmentAdminAsync(UserManager<ApplicationUser> userManager)
     {
@@ -22,7 +24,9 @@ public static class DevelopmentDataSeeder
         {
             UserName = DefaultAdminEmail,
             Email = DefaultAdminEmail,
-            EmailConfirmed = true
+            EmailConfirmed = true,
+            FirstName = DefaultAdminFirstName,
+            LastName = DefaultAdminLastName
         };
 
         await userManager.CreateAsync(user, DefaultAdminPassword);

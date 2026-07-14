@@ -82,8 +82,27 @@ concurrent requests never both try to rotate the same token. Tokens are stored h
 opaque value) — never plaintext, since the raw token is a live bearer credential.
 
 **Local dev login**: in Development, `API.WebApi` seeds a default admin user on startup
-(`Data/DevelopmentDataSeeder.cs`) — `admin@pilotsrus.local` / `P@ssw0rd123!`. There's no registration
+(`Data/DevelopmentDataSeeder.cs`) — Hans Sjödin, `hasse29@hotmail.com` / `admin`. There's no registration
 endpoint yet (infra-only scope).
+
+**User identity**: `ApplicationUser` (`Data/ApplicationUser.cs`) extends `IdentityUser<Guid>` with required
+`FirstName`/`LastName`. `IdentityOptions.User.RequireUniqueEmail = true` is set in
+`AddApplicationIdentity`, and every user's `UserName` is set equal to `Email` by convention at both current
+construction sites (the seeder and the test factory) — there's no custom `IUserValidator<ApplicationUser>`
+enforcing this yet since there's no registration endpoint for untrusted input to police; add one (registered
+additively alongside Identity's built-in validator — Identity runs every registered `IUserValidator<TUser>`,
+not just one) when registration ships. `IdentityOptions.Password` is also deliberately relaxed there
+(`RequiredLength = 4`, all complexity requirements off) to allow the weak seeded dev password — revisit once
+real user registration exists and needs to enforce a real policy against user-chosen passwords.
+
+**Password hashing**: `Features/Auth/Argon2PasswordHasher.cs` replaces Identity's default PBKDF2-based
+`PasswordHasher<TUser>` (registered via explicit non-`TryAdd` `AddScoped` in `AddApplicationIdentity`, the
+same override pattern `AddApplicationJwtAuth` uses for the JWT bearer scheme). Argon2id, OWASP 2023 minimum
+baseline (`m=19456` KiB, `t=2`, `p=1`), stored as a self-describing PHC string
+(`$argon2id$v=19$m=...,t=...,p=...$<salt>$<hash>`) so parameters can be tuned later — `VerifyHashedPassword`
+parses the embedded parameters rather than assuming current constants, and returns
+`PasswordVerificationResult.SuccessRehashNeeded` when they've drifted, which makes Identity transparently
+rehash on the user's next successful login with no manual migration.
 
 **Gotchas to remember**:
 - Don't read `IConfiguration`/bind option values eagerly in extension methods called from `Program.cs`
@@ -119,9 +138,10 @@ CLAUDE.md's factory convention, for any future non-Identity repository code. Bot
 conflict since they resolve via different service types — don't collapse them into one.
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
-  `Data/ApplicationUser.cs`, `Data/ApplicationRole.cs`, `Data/RefreshToken.cs`. Identity's own tables
-  (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens` — no other business tables yet.
-- Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`). `dotnet ef migrations add
+  `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
+  `Data/RefreshToken.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens` —
+  no other business tables yet.
+- Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`). `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
