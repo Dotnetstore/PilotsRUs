@@ -14,8 +14,9 @@ three parts:
 ## Current status
 
 The solution scaffold plus a working infra layer are in place: Postgres/EF Core (via Aspire), JWT-based
-login with rotating refresh tokens, and AdminLTE 4 styling are implemented — see "Authentication" and
-"Database" below. Scope is
+login with rotating refresh tokens, role-based authorization (a single "Admin" role) with a full Users CRUD
+management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see "Authentication",
+"Authorization and Users CRUD", and "Database" below. Scope is
 deliberately **infra-only**: no business/domain entities (Pilot, Airline, Job, Aircraft, etc.) exist yet.
 Those come once that domain is defined; don't invent them speculatively. When adding new projects, register
 them in `PilotsRUs.slnx` (the XML-based solution format — add `<Project Path="..." />` entries, not a
@@ -126,6 +127,61 @@ upholds.
   `ExecuteUpdateAsync` — the latter isn't supported by EF Core's InMemory provider (used in
   `ApiFactory`-based tests), and a lineage only ever has a handful of rows, so the extra round-trip is
   free against Postgres too.
+
+## Authorization and Users CRUD
+
+A single "Admin" role (name defined once, in `Shared.SDK/Auth/AuthConstants.AdminRoleName`, since
+`API.WebApi` and `Admin.App` don't share an EF/Identity dependency) gates user management. There is no
+"member"-facing functionality yet — the role exists purely to protect the Users CRUD screen.
+
+- **Seeding**: `Data/RoleSeeder.cs` creates the Admin role unconditionally (every environment, not just
+  Development) on every startup, via a `RoleManager<ApplicationRole>` scope in `Program.cs` — must run
+  *after* the Development-only migration block, since it queries `AspNetRoles`, which doesn't exist until
+  migrations have applied. In Development, `DevelopmentDataSeeder.SeedDevelopmentAdminAsync` also assigns
+  the role to the seeded dev admin (including on the already-exists branch, so re-running against an older
+  DB still elevates the existing user rather than skipping).
+- **JWT/cookie propagation**: `JwtTokenService` already added one `ClaimTypes.Role` claim per role to the
+  access token. `LoginResponse` now also carries `Roles` directly (both `/auth/login` and `/auth/refresh`
+  populate it from `UserManager.GetRolesAsync`), so `Admin.App`'s `Login.cshtml.cs` can add matching
+  `ClaimTypes.Role` claims to the cookie principal at login time without an extra round-trip.
+  `BearerTokenHandler`'s refresh path reuses the existing `httpContext.User` principal unchanged, so a
+  role revoked mid-session only takes effect on the user's next full re-login.
+- **Enforcement**: both sides register an `"AdminOnly"` policy (`policy.RequireRole(AuthConstants.AdminRoleName)`)
+  via `AddAuthorizationBuilder()`. `API.WebApi`'s `/users/*` endpoints (`Features/Users/UserEndpoints.cs`)
+  require it directly on the route group. `Admin.App` gates the whole `Pages/Users` folder via
+  `AddRazorPages(options => options.Conventions.AuthorizeFolder("/Users", "AdminOnly"))` — a non-admin
+  hitting any `/Users/*` URL directly gets redirected to `AccessDeniedPath` (`/Account/Login`), not just
+  hidden from the nav.
+- **Users CRUD** (`Features/Users/UserEndpoints.cs`, DTOs in `Shared.SDK/Users/`): standard list/get/create/
+  update, plus "delete" implemented as **deactivate** (Identity's `LockoutEnabled`/`LockoutEnd`, reversible
+  via a separate reactivate endpoint) rather than `UserManager.DeleteAsync` — no schema change needed since
+  `AspNetUsers` already has lockout columns. Deactivating a user also calls
+  `IRefreshTokenService.RevokeAllForUserAsync` so a still-valid refresh token can't silently renew their
+  session; their already-issued JWT access token still works until its own (short) expiry, since JWTs
+  aren't revocable — only refresh tokens are.
+  - A **last-active-admin guard** (`CountOtherActiveAdminsAsync`, counting admins excluding the target who
+    are *not* locked out) blocks both removing the Admin role via `PUT` and deactivating via `POST
+    .../deactivate` when it would leave zero active admins — counting only *active* role-holders (not just
+    role-holders) matters, since a role-holder who's already locked out can't exercise the role, so
+    counting them as "remaining" would let the system reach a state where every Admin-role user is locked
+    out and nobody can undo it.
+  - Deactivating your own account is blocked separately (`ClaimsPrincipal` vs. route `id` comparison) —
+    note the caller's user id claim is read via `ClaimTypes.NameIdentifier`, not
+    `JwtRegisteredClaimNames.Sub`: ASP.NET Core's JWT bearer handler remaps the short `"sub"` claim to the
+    long `ClaimTypes.NameIdentifier` name by default (`MapInboundClaims`), the same remapping `/auth/me`
+    already relies on for `Email`/`GivenName`/`Surname`/`Role`.
+  - Validation errors from `IdentityResult.Errors` are returned as a structured `UserValidationProblem`
+    (`Field`/`Description` pairs, `IdentityError.Code` mapped to a field name via a small switch) rather
+    than a flat string, so `Admin.App`'s Create/Edit pages can attach each error to the right form field via
+    `asp-validation-for`. The last-active-admin conflict, by contrast, is a plain `Results.Conflict(string)`
+    /`Results.BadRequest(string)` — which serializes as a JSON string literal, so callers must deserialize
+    with `ReadFromJsonAsync<string>()`, not `ReadAsStringAsync()`, to avoid literal quote marks in the UI.
+- **Admin.App pages** (`Pages/Users/Index|Create|Edit|Deactivate.cshtml(.cs)`): plain Bootstrap
+  `.table`/`.card` markup, no DataTables or other JS grid plugin (none is vendored — see "Front-end assets"
+  below). Edit only covers Email/FirstName/LastName/Admin-role — no password field (no self-service
+  password reset flow exists yet). Reactivate is a same-page POST handler on `Index.cshtml`
+  (`OnPostReactivateAsync`), not a separate confirm page, since it's fully reversible; Deactivate gets its
+  own confirm-page precisely because it isn't.
 
 ## Architecture principles
 

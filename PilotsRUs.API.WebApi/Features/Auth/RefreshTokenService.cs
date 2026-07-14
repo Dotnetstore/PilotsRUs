@@ -12,6 +12,7 @@ public interface IRefreshTokenService
     Task<(string RawToken, DateTimeOffset ExpiresAtUtc)> IssueAsync(Guid userId, Guid familyId, CancellationToken ct = default);
     Task<RefreshTokenResult> RotateAsync(string rawToken, CancellationToken ct = default);
     Task RevokeByRawTokenAsync(string rawToken, string reason, CancellationToken ct = default);
+    Task RevokeAllForUserAsync(Guid userId, string reason, CancellationToken ct = default);
 }
 
 public enum RefreshTokenOutcome { Success, NotFound, Expired, ReuseDetected }
@@ -112,6 +113,27 @@ public sealed class RefreshTokenService(
         }
 
         await RevokeFamilyAsync(db, existing.FamilyId, reason, ct);
+    }
+
+    public async Task RevokeAllForUserAsync(Guid userId, string reason, CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        // Load + mutate + SaveChanges rather than ExecuteUpdateAsync, since the latter isn't supported by
+        // EF Core's InMemory provider (used in tests) - a user only ever has a handful of active tokens, so
+        // this is not a meaningful cost against Postgres either.
+        var activeTokens = await db.RefreshTokens
+            .Where(t => t.UserId == userId && t.RevokedAtUtc == null)
+            .ToListAsync(ct);
+
+        var revokedAtUtc = DateTimeOffset.UtcNow;
+        foreach (var token in activeTokens)
+        {
+            token.RevokedAtUtc = revokedAtUtc;
+            token.RevokedReason = reason;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task RevokeFamilyAsync(ApplicationDbContext db, Guid familyId, string reason, CancellationToken ct)

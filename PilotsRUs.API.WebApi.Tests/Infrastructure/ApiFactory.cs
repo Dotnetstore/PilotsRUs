@@ -1,3 +1,5 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -5,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PilotsRUs.API.WebApi.Data;
+using PilotsRUs.Shared.SDK.Auth;
 
 namespace PilotsRUs.API.WebApi.Tests.Infrastructure;
 
@@ -62,5 +65,39 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         }
 
         return user;
+    }
+
+    public async Task<(HttpClient Client, ApplicationUser User)> CreateAuthenticatedAdminClientAsync(string email, string password)
+    {
+        ApplicationUser user;
+        using (var scope = Services.CreateScope())
+        {
+            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
+            if (!await roleManager.RoleExistsAsync(AuthConstants.AdminRoleName))
+            {
+                await roleManager.CreateAsync(new ApplicationRole { Name = AuthConstants.AdminRoleName });
+            }
+
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            user = new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true, FirstName = "Test", LastName = "User" };
+            var createResult = await userManager.CreateAsync(user, password);
+            if (!createResult.Succeeded)
+            {
+                throw new InvalidOperationException(string.Join(", ", createResult.Errors.Select(e => e.Description)));
+            }
+
+            var roleResult = await userManager.AddToRoleAsync(user, AuthConstants.AdminRoleName);
+            if (!roleResult.Succeeded)
+            {
+                throw new InvalidOperationException(string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+            }
+        }
+
+        var client = CreateClient();
+        var loginResponse = await (await client.PostAsJsonAsync("/auth/login", new LoginRequest(email, password)))
+            .Content.ReadFromJsonAsync<LoginResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginResponse!.AccessToken);
+
+        return (client, user);
     }
 }

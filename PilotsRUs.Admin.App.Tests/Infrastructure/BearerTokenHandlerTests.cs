@@ -41,7 +41,7 @@ public sealed class BearerTokenHandlerTests
                 : new HttpResponseMessage(HttpStatusCode.OK);
         });
 
-        var newTokens = new LoginResponse("new-access-token", DateTimeOffset.UtcNow.AddHours(1), "new-refresh-token", DateTimeOffset.UtcNow.AddDays(14));
+        var newTokens = new LoginResponse("new-access-token", DateTimeOffset.UtcNow.AddHours(1), "new-refresh-token", DateTimeOffset.UtcNow.AddDays(14), []);
         var refreshHandler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = JsonContent.Create(newTokens)

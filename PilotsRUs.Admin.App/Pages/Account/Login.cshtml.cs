@@ -47,6 +47,7 @@ public sealed class LoginModel(IHttpClientFactory httpClientFactory) : PageModel
         }
 
         var claims = new List<Claim> { new(ClaimTypes.Name, Input.Email) };
+        claims.AddRange(loginResponse.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
         var authProperties = new AuthenticationProperties();
         authProperties.StoreTokens(

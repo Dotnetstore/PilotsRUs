@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using PilotsRUs.Shared.SDK.Auth;
 
 namespace PilotsRUs.API.WebApi.Data;
 
@@ -15,8 +16,13 @@ public static class DevelopmentDataSeeder
 
     public static async Task SeedDevelopmentAdminAsync(UserManager<ApplicationUser> userManager)
     {
-        if (await userManager.FindByEmailAsync(DefaultAdminEmail) is not null)
+        var existing = await userManager.FindByEmailAsync(DefaultAdminEmail);
+        if (existing is not null)
         {
+            if (!await userManager.IsInRoleAsync(existing, AuthConstants.AdminRoleName))
+            {
+                await userManager.AddToRoleAsync(existing, AuthConstants.AdminRoleName);
+            }
             return;
         }
 
@@ -33,6 +39,12 @@ public static class DevelopmentDataSeeder
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+        }
+
+        var roleResult = await userManager.AddToRoleAsync(user, AuthConstants.AdminRoleName);
+        if (!roleResult.Succeeded)
+        {
+            throw new InvalidOperationException(string.Join(", ", roleResult.Errors.Select(e => e.Description)));
         }
     }
 }

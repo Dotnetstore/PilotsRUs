@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
 using PilotsRUs.API.WebApi.Features.Auth;
+using PilotsRUs.API.WebApi.Features.Users;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,11 +24,24 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    using var migrationScope = app.Services.CreateScope();
+    var dbContext = migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await dbContext.Database.MigrateAsync();
+}
 
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+// Must run after the migration block above - RoleSeeder queries AspNetRoles, which doesn't exist until
+// migrations have applied. Runs unconditionally (every environment, not just Development) since
+// role-gated endpoints/pages must be reachable everywhere.
+using (var roleSeedingScope = app.Services.CreateScope())
+{
+    var roleManager = roleSeedingScope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
+    await RoleSeeder.SeedRolesAsync(roleManager);
+}
+
+if (app.Environment.IsDevelopment())
+{
+    using var seederScope = app.Services.CreateScope();
+    var userManager = seederScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
     await DevelopmentDataSeeder.SeedDevelopmentAdminAsync(userManager);
 }
 
@@ -37,6 +51,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 
 var summaries = new[]
 {

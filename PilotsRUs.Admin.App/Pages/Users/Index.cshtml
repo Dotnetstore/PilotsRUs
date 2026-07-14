@@ -1,0 +1,62 @@
+@page
+@model PilotsRUs.Admin.App.Pages.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+}
+
+<p><a asp-page="/Users/Create" class="btn btn-primary">Create new user</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Model.Users)
+                {
+                    <tr>
+                        <td>@user.Email</td>
+                        <td>@user.FirstName @user.LastName</td>
+                        <td>
+                            @if (user.IsAdmin)
+                            {
+                                <span class="badge text-bg-primary">Admin</span>
+                            }
+                        </td>
+                        <td>
+                            @if (user.IsLockedOut)
+                            {
+                                <span class="badge text-bg-secondary">Deactivated</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-success">Active</span>
+                            }
+                        </td>
+                        <td>
+                            <a asp-page="/Users/Edit" asp-route-id="@user.Id">Edit</a>
+                            @if (user.IsLockedOut)
+                            {
+                                <form method="post" asp-page-handler="Reactivate" asp-route-id="@user.Id" class="d-inline">
+                                    <button type="submit" class="btn btn-link p-0 align-baseline">Reactivate</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <text> | </text>
+                                <a asp-page="/Users/Deactivate" asp-route-id="@user.Id">Deactivate</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -32,7 +32,7 @@ public static class AuthEndpoints
             var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(user, roles);
             var (refreshToken, refreshExpiresAtUtc) = await refreshTokenService.IssueAsync(user.Id, Guid.NewGuid());
 
-            return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, refreshToken, refreshExpiresAtUtc));
+            return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, refreshToken, refreshExpiresAtUtc, (IReadOnlyList<string>)roles));
         })
         .WithName("Login")
         .AllowAnonymous();
@@ -52,7 +52,7 @@ public static class AuthEndpoints
             var roles = await userManager.GetRolesAsync(result.User!);
             var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(result.User!, roles);
 
-            return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, result.NewRawToken!, result.NewExpiresAtUtc!.Value));
+            return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, result.NewRawToken!, result.NewExpiresAtUtc!.Value, (IReadOnlyList<string>)roles));
         })
         .WithName("RefreshToken")
         .AllowAnonymous();

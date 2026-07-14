@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Features.Auth;
+using PilotsRUs.Shared.SDK.Auth;
 
 namespace PilotsRUs.API.WebApi.Extensions;
 
@@ -118,7 +119,8 @@ public static class AuthServiceCollectionExtensions
                 };
             });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorizationBuilder()
+            .AddPolicy("AdminOnly", policy => policy.RequireRole(AuthConstants.AdminRoleName));
 
         return builder;
     }

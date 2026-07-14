@@ -4,4 +4,5 @@ public sealed record LoginResponse(
     string AccessToken,
     DateTimeOffset ExpiresAtUtc,
     string RefreshToken,
-    DateTimeOffset RefreshTokenExpiresAtUtc);
+    DateTimeOffset RefreshTokenExpiresAtUtc,
+    IReadOnlyList<string> Roles);

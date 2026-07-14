@@ -1,0 +1,24 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.Users.DeactivateModel
+@{
+    ViewData["Title"] = "Deactivate user";
+}
+
+<div class="card">
+    <div class="card-body">
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+        }
+
+        @if (Model.TargetUser is not null)
+        {
+            <p>Deactivate <strong>@Model.TargetUser.Email</strong>? They will be immediately signed out and unable to log in until reactivated.</p>
+
+            <form method="post">
+                <button type="submit" class="btn btn-danger">Deactivate</button>
+                <a asp-page="/Users/Index" class="btn btn-secondary">Cancel</a>
+            </form>
+        }
+    </div>
+</div>
