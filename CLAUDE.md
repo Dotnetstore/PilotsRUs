@@ -14,7 +14,8 @@ three parts:
 ## Current status
 
 The solution scaffold plus a working infra layer are in place: Postgres/EF Core (via Aspire), JWT-based
-login, and AdminLTE 4 styling are implemented — see "Authentication" and "Database" below. Scope is
+login with rotating refresh tokens, and AdminLTE 4 styling are implemented — see "Authentication" and
+"Database" below. Scope is
 deliberately **infra-only**: no business/domain entities (Pilot, Airline, Job, Aircraft, etc.) exist yet.
 Those come once that domain is defined; don't invent them speculatively. When adding new projects, register
 them in `PilotsRUs.slnx` (the XML-based solution format — add `<Project Path="..." />` entries, not a
@@ -44,33 +45,57 @@ run it to verify orchestration wiring after touching `AppHost.cs` or either host
 
 ## Authentication
 
-Backend-for-frontend pattern: `Admin.App` never validates a JWT itself.
+Backend-for-frontend pattern: `Admin.App` never validates a JWT itself. Access tokens (JWT, short-lived,
+default 60 min) are paired with opaque refresh tokens (DB-backed, rotating, default 14 days) so a session
+can survive well past the access token's expiry without re-prompting for credentials.
 
-1. `POST /auth/login` on `API.WebApi` (`Features/Auth/LoginEndpoint.cs`) checks credentials via
-   ASP.NET Core Identity (`SignInManager`/`UserManager`) and returns a JWT (`Features/Auth/JwtTokenService.cs`)
-   signed with `Jwt:Key` (set via `dotnet user-secrets`, never committed — `Jwt:Issuer`/`Jwt:Audience` are
-   plain values in `appsettings.json`).
+1. `POST /auth/login` on `API.WebApi` (`Features/Auth/AuthEndpoints.cs`) checks credentials via ASP.NET
+   Core Identity (`SignInManager`/`UserManager`), mints a JWT (`Features/Auth/JwtTokenService.cs`, signed
+   with `Jwt:Key` — set via `dotnet user-secrets`, never committed; `Jwt:Issuer`/`Jwt:Audience` are plain
+   values in `appsettings.json`), and issues a refresh token (`Features/Auth/RefreshTokenService.cs`) tied
+   to a fresh `FamilyId` lineage. Both come back in one `LoginResponse`.
 2. `Admin.App`'s `Pages/Account/Login.cshtml.cs` posts to that endpoint via the named `"Api"` HttpClient,
-   then stores the returned JWT inside its own cookie auth session via `AuthenticationProperties.StoreTokens`
-   (retrieved later with `HttpContext.GetTokenAsync("access_token")`) — this is the standard ASP.NET Core
-   mechanism for stashing an external token inside a cookie, not a bespoke claim.
+   then stores both tokens (plus the access token's expiry) inside its own cookie auth session via
+   `AuthenticationProperties.StoreTokens` (retrieved later with `HttpContext.GetTokenAsync("access_token"
+   | "refresh_token" | "expires_at")`) — the standard ASP.NET Core mechanism for stashing external tokens
+   inside a cookie, not bespoke claims.
 3. `Admin.App`'s `Infrastructure/BearerTokenHandler.cs` (a `DelegatingHandler` on the `"Api"` HttpClient)
-   reads that token via `IHttpContextAccessor` and attaches it as `Authorization: Bearer <token>` on every
-   outgoing call to the API.
-4. `API.WebApi` validates the bearer token via `AddJwtBearer` (wired in
-   `Extensions/AuthServiceCollectionExtensions.cs`); protect new endpoints with `.RequireAuthorization()`.
-   `GET /auth/me` is a minimal example of a protected endpoint.
+   attaches the access token as `Authorization: Bearer <token>` on every outgoing call. On a 401, it POSTs
+   the stored refresh token to `/auth/refresh`, re-signs the cookie with the new pair (mid-request, via
+   `IHttpContextAccessor` — safe as long as `Response.HasStarted` is still false), and retries the original
+   request once. Concurrent 401s within the same session serialize onto one refresh call via a
+   `SemaphoreSlim` keyed by user identity, to avoid two requests both trying to consume the same
+   soon-to-be-rotated-away refresh token.
+4. `POST /auth/refresh` and `POST /auth/logout` are both `.AllowAnonymous()` — the refresh token itself,
+   validated against the DB, is the credential; requiring a valid (non-expired) access token to call them
+   would defeat their purpose. `API.WebApi` validates the bearer token on protected endpoints via
+   `AddJwtBearer` (wired in `Extensions/AuthServiceCollectionExtensions.cs`, with `ClockSkew = TimeSpan.Zero`
+   — the 5-minute default would let an "expired" token keep working); protect new endpoints with
+   `.RequireAuthorization()`. `GET /auth/me` is a minimal example.
+
+**Refresh token rotation**: every `/auth/refresh` call (`RefreshTokenService.RotateAsync`) issues a new
+token and revokes the presented one (`RevokedReason: "rotated"`, `ReplacedByTokenId` pointing forward).
+Presenting an already-revoked token is treated as theft and revokes the *entire* `FamilyId` lineage
+(`RevokedReason: "reuse-detected"`), forcing re-login — this is why `Admin.App` retries with the
+*currently-stored* access token before calling `/auth/refresh` again (see `BearerTokenHandler`), so two
+concurrent requests never both try to rotate the same token. Tokens are stored hashed (SHA-256 of the raw
+opaque value) — never plaintext, since the raw token is a live bearer credential.
 
 **Local dev login**: in Development, `API.WebApi` seeds a default admin user on startup
 (`Data/DevelopmentDataSeeder.cs`) — `admin@pilotsrus.local` / `P@ssw0rd123!`. There's no registration
 endpoint yet (infra-only scope).
 
-**Gotcha to remember**: don't read `IConfiguration`/build option values eagerly in extension methods called
-from `Program.cs` before `builder.Build()` (e.g. `builder.Configuration.GetSection(...).Get<T>()` captured
-in a closure) — that snapshot misses configuration sources added later (integration tests add
-`ConnectionStrings`/`Jwt` overrides via `WebApplicationFactory.ConfigureAppConfiguration`, which only takes
-effect after `Program.cs`'s own top-level code has already run). Resolve `IOptions<T>` lazily from DI
-instead, as `AddApplicationJwtAuth` does for `JwtBearerOptions`.
+**Gotchas to remember**:
+- Don't read `IConfiguration`/bind option values eagerly in extension methods called from `Program.cs`
+  before `builder.Build()` (e.g. `builder.Configuration.GetSection(...).Get<T>()` captured in a closure) —
+  that snapshot misses configuration sources added later (integration tests add `ConnectionStrings`/`Jwt`
+  overrides via `WebApplicationFactory.ConfigureAppConfiguration`, which only takes effect after
+  `Program.cs`'s own top-level code has already run). Resolve `IOptions<T>` lazily from DI instead, as
+  `AddApplicationJwtAuth` does for both `JwtBearerOptions` and `RefreshTokenOptions`.
+- `RefreshTokenService`'s family-revocation uses a load-then-`SaveChangesAsync` update, not
+  `ExecuteUpdateAsync` — the latter isn't supported by EF Core's InMemory provider (used in
+  `ApiFactory`-based tests), and a lineage only ever has a handful of rows, so the extra round-trip is
+  free against Postgres too.
 
 ## Architecture principles
 
@@ -94,11 +119,12 @@ CLAUDE.md's factory convention, for any future non-Identity repository code. Bot
 conflict since they resolve via different service types — don't collapse them into one.
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
-  `Data/ApplicationUser.cs`, `Data/ApplicationRole.cs`. Only Identity's own tables exist (`AspNetUsers`,
-  `AspNetRoles`, etc.) — no business tables yet.
-- Migrations live in `Data/Migrations/`. `dotnet ef migrations add <Name> --project PilotsRUs.API.WebApi
-  --output-dir Data/Migrations` (needs `Data/DesignTimeDbContextFactory.cs` since the context is registered
-  via `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
+  `Data/ApplicationUser.cs`, `Data/ApplicationRole.cs`, `Data/RefreshToken.cs`. Identity's own tables
+  (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens` — no other business tables yet.
+- Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`). `dotnet ef migrations add
+  <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
+  `Data/DesignTimeDbContextFactory.cs` since the context is registered via
+  `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
   pattern EF tools auto-discover).
 - Applied automatically at startup, gated to `IsDevelopment()` (`Program.cs`) — no separate migrator
   resource; revisit if/when a real deployment pipeline exists.

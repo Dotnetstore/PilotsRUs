@@ -49,7 +49,12 @@ public sealed class LoginModel(IHttpClientFactory httpClientFactory) : PageModel
         var claims = new List<Claim> { new(ClaimTypes.Name, Input.Email) };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
         var authProperties = new AuthenticationProperties();
-        authProperties.StoreTokens([new AuthenticationToken { Name = "access_token", Value = loginResponse.AccessToken }]);
+        authProperties.StoreTokens(
+        [
+            new AuthenticationToken { Name = "access_token", Value = loginResponse.AccessToken },
+            new AuthenticationToken { Name = "refresh_token", Value = loginResponse.RefreshToken },
+            new AuthenticationToken { Name = "expires_at", Value = loginResponse.ExpiresAtUtc.ToString("o") }
+        ]);
 
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
 

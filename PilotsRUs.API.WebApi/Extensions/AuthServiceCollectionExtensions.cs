@@ -47,6 +47,15 @@ public static class AuthServiceCollectionExtensions
 
         builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 
+        builder.Services
+            .AddOptions<RefreshTokenOptions>()
+            .Bind(builder.Configuration.GetSection(RefreshTokenOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Scoped, not singleton like IJwtTokenService - this one touches the database per call.
+        builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer();
 
@@ -64,6 +73,11 @@ public static class AuthServiceCollectionExtensions
                     ValidateAudience = true,
                     ValidAudience = jwtOptions.Audience,
                     ValidateLifetime = true,
+                    // Default is 5 minutes, which would let an "expired" access token keep working for up
+                    // to 5 minutes past its stated Jwt:Expiry - defeating the point of pairing a
+                    // short-lived access token with a refresh token. Access tokens must expire exactly
+                    // when they say they do.
+                    ClockSkew = TimeSpan.Zero,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key))
                 };
