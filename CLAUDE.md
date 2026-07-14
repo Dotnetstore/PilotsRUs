@@ -86,23 +86,34 @@ opaque value) — never plaintext, since the raw token is a live bearer credenti
 endpoint yet (infra-only scope).
 
 **User identity**: `ApplicationUser` (`Data/ApplicationUser.cs`) extends `IdentityUser<Guid>` with required
-`FirstName`/`LastName`. `IdentityOptions.User.RequireUniqueEmail = true` is set in
-`AddApplicationIdentity`, and every user's `UserName` is set equal to `Email` by convention at both current
-construction sites (the seeder and the test factory) — there's no custom `IUserValidator<ApplicationUser>`
-enforcing this yet since there's no registration endpoint for untrusted input to police; add one (registered
-additively alongside Identity's built-in validator — Identity runs every registered `IUserValidator<TUser>`,
-not just one) when registration ships. `IdentityOptions.Password` is also deliberately relaxed there
-(`RequiredLength = 4`, all complexity requirements off) to allow the weak seeded dev password — revisit once
-real user registration exists and needs to enforce a real policy against user-chosen passwords.
+`FirstName`/`LastName` (surfaced via `GivenName`/`Surname` JWT claims and returned from `/auth/me`, so
+`Admin.App` can greet the user by name instead of raw email — see `CurrentUserResponse`).
+`IdentityOptions.User.RequireUniqueEmail = true` is set unconditionally in `AddApplicationIdentity`, and
+every user's `UserName` is set equal to `Email` by convention at both current construction sites (the
+seeder and the test factory) — there's no custom `IUserValidator<ApplicationUser>` enforcing this yet since
+there's no registration endpoint for untrusted input to police; add one (registered additively alongside
+Identity's built-in validator — Identity runs every registered `IUserValidator<TUser>`, not just one) when
+registration ships. `IdentityOptions.Password` is separately relaxed (`RequiredLength = 4`, all complexity
+requirements off) but **only inside an `if (builder.Environment.IsDevelopment())` guard** in
+`AddApplicationIdentity` — it must stay Development-only since it exists purely to allow the weak seeded
+dev password; don't hoist it out of that guard even though `RequireUniqueEmail` above it is unconditional.
+Revisit once real user registration exists and needs to enforce a real policy against user-chosen
+passwords.
 
 **Password hashing**: `Features/Auth/Argon2PasswordHasher.cs` replaces Identity's default PBKDF2-based
-`PasswordHasher<TUser>` (registered via explicit non-`TryAdd` `AddScoped` in `AddApplicationIdentity`, the
-same override pattern `AddApplicationJwtAuth` uses for the JWT bearer scheme). Argon2id, OWASP 2023 minimum
-baseline (`m=19456` KiB, `t=2`, `p=1`), stored as a self-describing PHC string
-(`$argon2id$v=19$m=...,t=...,p=...$<salt>$<hash>`) so parameters can be tuned later — `VerifyHashedPassword`
-parses the embedded parameters rather than assuming current constants, and returns
-`PasswordVerificationResult.SuccessRehashNeeded` when they've drifted, which makes Identity transparently
-rehash on the user's next successful login with no manual migration.
+`PasswordHasher<TUser>` (registered via explicit non-`TryAdd` `AddSingleton` in `AddApplicationIdentity` —
+singleton, not scoped, since it holds no per-instance state, same reasoning as `IJwtTokenService`). Argon2id,
+parameters bound from configuration via `Argon2Options`/section `"Argon2"` (OWASP 2023 minimum baseline by
+default: `m=19456` KiB, `t=2`, `p=1`), stored as a self-describing PHC string
+(`$argon2id$v=19$m=...,t=...,p=...$<salt>$<hash>`) — every parameter that affects the computed hash,
+*including the output hash length*, is parsed back out of the stored string on verify rather than assumed
+from current config, so `VerifyHashedPassword` correctly detects drift and returns
+`PasswordVerificationResult.SuccessRehashNeeded`, letting Identity transparently rehash on the user's next
+successful login with no manual migration. `VerifyHashedPassword` never throws for a malformed/incompatible
+`hashedPassword` (e.g. a legacy hash from Identity's old default hasher, or a corrupted value) — parsing
+failures are caught and treated as `PasswordVerificationResult.Failed`, matching the contract
+`IPasswordHasher<TUser>` callers (`UserManager`/`SignInManager`) rely on and Identity's own default hasher
+upholds.
 
 **Gotchas to remember**:
 - Don't read `IConfiguration`/bind option values eagerly in extension methods called from `Program.cs`

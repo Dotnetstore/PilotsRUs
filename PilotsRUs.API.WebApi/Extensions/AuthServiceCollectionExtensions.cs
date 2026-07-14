@@ -34,25 +34,40 @@ public static class AuthServiceCollectionExtensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager();
 
+        builder.Services
+            .AddOptions<Argon2Options>()
+            .Bind(builder.Configuration.GetSection(Argon2Options.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         // AddIdentityCore registers the default PasswordHasher<TUser> via TryAddScoped; this explicit
         // (non-TryAdd) registration overrides it - same override pattern AddApplicationJwtAuth already
-        // uses for AddAuthentication(JwtBearerDefaults.AuthenticationScheme).
-        builder.Services.AddScoped<IPasswordHasher<ApplicationUser>, Argon2PasswordHasher>();
+        // uses for AddAuthentication(JwtBearerDefaults.AuthenticationScheme). Singleton, not scoped -
+        // Argon2PasswordHasher holds no per-instance state and touches no database, unlike
+        // IRefreshTokenService below (same stateless reasoning as IJwtTokenService).
+        builder.Services.AddSingleton<IPasswordHasher<ApplicationUser>, Argon2PasswordHasher>();
 
         builder.Services.Configure<IdentityOptions>(options =>
         {
             options.User.RequireUniqueEmail = true;
-
-            // Intentionally permissive for pre-registration dev/seed purposes only - there is no
-            // registration endpoint yet (infra-only scope, see CLAUDE.md). Revisit once real user
-            // registration ships and a real password policy needs enforcing against user-chosen passwords.
-            options.Password.RequiredLength = 4;
-            options.Password.RequireDigit = false;
-            options.Password.RequireLowercase = false;
-            options.Password.RequireUppercase = false;
-            options.Password.RequireNonAlphanumeric = false;
-            options.Password.RequiredUniqueChars = 1;
         });
+
+        if (builder.Environment.IsDevelopment())
+        {
+            // Intentionally permissive, Development only - there is no registration endpoint yet
+            // (infra-only scope, see CLAUDE.md), so this only ever affects the seeded dev admin. Revisit
+            // once real user registration ships and a real password policy needs enforcing in every
+            // environment against user-chosen passwords.
+            builder.Services.Configure<IdentityOptions>(options =>
+            {
+                options.Password.RequiredLength = 4;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequiredUniqueChars = 1;
+            });
+        }
 
         return builder;
     }

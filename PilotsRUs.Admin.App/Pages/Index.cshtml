@@ -9,7 +9,7 @@
 
     @if (Model.CurrentUser is not null)
     {
-        <p>Logged in as <strong>@Model.CurrentUser.Email</strong>@(Model.CurrentUser.Roles.Count > 0 ? $" ({string.Join(", ", Model.CurrentUser.Roles)})" : "")</p>
+        <p>Logged in as <strong>@Model.CurrentUser.FirstName @Model.CurrentUser.LastName</strong> (@Model.CurrentUser.Email)@(Model.CurrentUser.Roles.Count > 0 ? $" ({string.Join(", ", Model.CurrentUser.Roles)})" : "")</p>
         <p><a asp-page="/Account/Logout">Log out</a></p>
     }
     else

@@ -68,8 +68,10 @@ public static class AuthEndpoints
         app.MapGet("/auth/me", (ClaimsPrincipal user) =>
         {
             var email = user.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+            var firstName = user.FindFirstValue(ClaimTypes.GivenName) ?? string.Empty;
+            var lastName = user.FindFirstValue(ClaimTypes.Surname) ?? string.Empty;
             var roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-            return Results.Ok(new CurrentUserResponse(email, roles));
+            return Results.Ok(new CurrentUserResponse(email, firstName, lastName, roles));
         })
         .WithName("GetCurrentUser")
         .RequireAuthorization();

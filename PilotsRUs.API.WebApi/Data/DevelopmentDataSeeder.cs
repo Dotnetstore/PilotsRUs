@@ -29,6 +29,10 @@ public static class DevelopmentDataSeeder
             LastName = DefaultAdminLastName
         };
 
-        await userManager.CreateAsync(user, DefaultAdminPassword);
+        var result = await userManager.CreateAsync(user, DefaultAdminPassword);
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+        }
     }
 }
