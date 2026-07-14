@@ -1,0 +1,37 @@
+@page
+@model PilotsRUs.Admin.App.Pages.Countries.IndexModel
+@{
+    ViewData["Title"] = "Countries";
+}
+
+<p><a asp-page="/Countries/Create" class="btn btn-primary">Create new country</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Alpha-2</th>
+                    <th>Alpha-3</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var country in Model.Countries)
+                {
+                    <tr>
+                        <td>@country.Name</td>
+                        <td>@country.IsoAlpha2Code</td>
+                        <td>@country.IsoAlpha3Code</td>
+                        <td>
+                            <a asp-page="/Countries/Edit" asp-route-id="@country.Id">Edit</a>
+                            <text> | </text>
+                            <a asp-page="/Countries/Delete" asp-route-id="@country.Id">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

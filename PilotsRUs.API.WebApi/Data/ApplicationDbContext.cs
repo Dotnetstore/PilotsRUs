@@ -9,6 +9,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Manufacturer> Manufacturers => Set<Manufacturer>();
     public DbSet<AircraftModel> AircraftModels => Set<AircraftModel>();
+    public DbSet<Country> Countries => Set<Country>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -35,6 +36,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(a => new { a.ManufacturerId, a.Name }).IsUnique();
             entity.HasIndex(a => a.IcaoTypeDesignator).IsUnique().HasFilter("\"IcaoTypeDesignator\" IS NOT NULL");
             entity.HasOne(a => a.Manufacturer).WithMany().HasForeignKey(a => a.ManufacturerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Country>(entity =>
+        {
+            entity.Property(c => c.Name).IsRequired().HasMaxLength(200);
+            entity.Property(c => c.IsoAlpha2Code).IsRequired().HasMaxLength(2);
+            entity.Property(c => c.IsoAlpha3Code).IsRequired().HasMaxLength(3);
+            entity.HasIndex(c => c.Name).IsUnique();
+            entity.HasIndex(c => c.IsoAlpha2Code).IsUnique();
+            entity.HasIndex(c => c.IsoAlpha3Code).IsUnique();
         });
     }
 }

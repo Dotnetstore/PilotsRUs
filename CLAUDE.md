@@ -270,6 +270,42 @@ an official standardized registry, so seeded rows carry real best-effort codes r
   `GET /manufacturers` and binds it via `asp-items="Model.ManufacturerOptions"`. This is the reference
   pattern for any future FK-driven form (e.g. a later Aircraft → AircraftModel relationship).
 
+## Countries
+
+A standalone reference/lookup entity — no FK to anything yet (unlike `AircraftModel`). `Data/Country.cs`:
+`Guid` PK, required unique `Name`, required unique `IsoAlpha2Code` (2 letters), required unique
+`IsoAlpha3Code` (3 letters). Unlike `Manufacturer.Code`, ISO 3166-1 is a stable, authoritative registry, so
+both codes are intended to always be populated — never left null the way `Manufacturer.Code` is.
+
+- **Three independent uniqueness rules**: `Name`, `IsoAlpha2Code`, and `IsoAlpha3Code` each have their own
+  unique index and their own pre-check in `Features/Countries/CountryEndpoints.cs` (`FindConflictAsync`,
+  checked in that order, first match wins) — more than Manufacturer/AircraftModel's single-uniqueness-rule
+  shape. Create/Update still fall back to a shared `catch (DbUpdateException)` closing the same TOCTOU gap.
+- **Case normalization**: `IsoAlpha2Code`/`IsoAlpha3Code` are normalized via `.ToUpperInvariant()` before
+  the uniqueness checks and the save on both Create and Update, so `"us"` and `"US"` can't end up as two
+  distinct rows — the first genuinely new normalization concern versus Manufacturer/AircraftModel, whose
+  single string fields didn't need it.
+- **Seeding**: `Data/CountrySeeder.cs` follows the same unconditional/idempotent/every-environment pattern
+  as `ManufacturerSeeder`/`AircraftModelSeeder`, called from `Program.cs` after `AircraftModelSeeder` (no
+  ordering *requirement* — Country has no FK to anything — just grouped there for readability). Seeds 195
+  sovereign states (Name/Alpha2/Alpha3) — the commonly-understood "countries of the world" list, not the
+  full ~249-entry ISO 3166-1 registry with dependent territories (Puerto Rico, Hong Kong, etc.), which was
+  the scope originally discussed but not what ended up populated.
+- **Test data gotcha**: because the seeder now runs for every `ApiFactory`-backed test too, `CountryEndpointsTests`
+  can't use real country names/codes (they'd collide with the 195 seeded rows) — it uses ISO 3166-1's
+  reserved "user-assigned" code ranges (`QM`-`QZ`, `XA`-`XZ`), which are guaranteed by the standard itself to
+  never be assigned to a real country. Follow the same convention for any future test that creates a
+  `Country`.
+- **Authorization**: same as Manufacturers/Aircraft Models — `.RequireAuthorization()` with no policy name
+  on `/countries/*`, `AuthorizeFolder("/Countries")` with no policy argument on the Admin.App side, nav link
+  gated on `User.Identity?.IsAuthenticated` (added as a third item in the same shared `@if` block that
+  already wraps Manufacturers + Aircraft Models in `_Layout.cshtml`, not a new `@if`).
+- **Hard delete, no guard** — nothing references `Country` via FK yet, so (unlike `DeleteManufacturer`)
+  `DeleteCountry` has no pre-check. Add the same `Restrict` + pre-check guard pattern once something
+  eventually references `Country` (e.g. a future `Manufacturer.CountryId`).
+- **Admin.App pages** (`Pages/Countries/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
+  Manufacturers — no dropdown needed (no FK).
+
 ## Architecture principles
 
 - Modular monolith with vertical slice architecture, following SOLID principles
@@ -293,11 +329,11 @@ conflict since they resolve via different service types — don't collapse them 
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
-  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`. Identity's own tables
-  (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, and `AircraftModels` (the
-  first FK relationship between two non-Identity entities — see "Aircraft Models" above).
+  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`. Identity's own
+  tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels` (the
+  first FK relationship between two non-Identity entities — see "Aircraft Models" above), and `Countries`.
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
-  `AddManufacturers`, `AddAircraftModels`). `dotnet ef migrations add
+  `AddManufacturers`, `AddAircraftModels`, `AddCountries`). `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`

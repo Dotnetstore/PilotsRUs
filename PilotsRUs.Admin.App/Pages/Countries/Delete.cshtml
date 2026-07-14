@@ -1,0 +1,24 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.Countries.DeleteModel
+@{
+    ViewData["Title"] = "Delete country";
+}
+
+<div class="card">
+    <div class="card-body">
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+        }
+
+        @if (Model.TargetCountry is not null)
+        {
+            <p>Delete <strong>@Model.TargetCountry.Name</strong>? This cannot be undone.</p>
+
+            <form method="post">
+                <button type="submit" class="btn btn-danger">Delete</button>
+                <a asp-page="/Countries/Index" class="btn btn-secondary">Cancel</a>
+            </form>
+        }
+    </div>
+</div>

@@ -4,6 +4,7 @@ using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
 using PilotsRUs.API.WebApi.Features.AircraftModels;
 using PilotsRUs.API.WebApi.Features.Auth;
+using PilotsRUs.API.WebApi.Features.Countries;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
 using PilotsRUs.API.WebApi.Features.Users;
 
@@ -50,6 +51,10 @@ await ManufacturerSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFac
 // to already exist. Same unconditional/every-environment reasoning as ManufacturerSeeder.
 await AircraftModelSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
 
+// No ordering dependency on the other seeders (Country has no FK to anything) - placed here just to keep
+// all reference-data seeders grouped together. Runs unconditionally/idempotently, same as the others.
+await CountrySeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
+
 if (app.Environment.IsDevelopment())
 {
     using var seederScope = app.Services.CreateScope();
@@ -66,6 +71,7 @@ app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapManufacturerEndpoints();
 app.MapAircraftModelEndpoints();
+app.MapCountryEndpoints();
 
 var summaries = new[]
 {
