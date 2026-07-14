@@ -11,7 +11,8 @@ builder.Services.AddRazorPages(options => options.Conventions
     .AuthorizeFolder("/Users", "AdminOnly")
     .AuthorizeFolder("/Manufacturers")
     .AuthorizeFolder("/AircraftModels")
-    .AuthorizeFolder("/Countries"));
+    .AuthorizeFolder("/Countries")
+    .AuthorizeFolder("/Airports"));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

@@ -1,0 +1,47 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.Airports.EditModel
+@{
+    ViewData["Title"] = "Edit airport";
+}
+
+<div class="card">
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="Input.CountryId" class="form-label"></label>
+                <select asp-for="Input.CountryId" asp-items="Model.CountryOptions" class="form-select">
+                    <option value="">-- Select Country --</option>
+                </select>
+                <span asp-validation-for="Input.CountryId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Name" class="form-label"></label>
+                <input asp-for="Input.Name" class="form-control" />
+                <span asp-validation-for="Input.Name" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.IcaoCode" class="form-label"></label>
+                <input asp-for="Input.IcaoCode" class="form-control" />
+                <span asp-validation-for="Input.IcaoCode" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.IataCode" class="form-label"></label>
+                <input asp-for="Input.IataCode" class="form-control" />
+                <span asp-validation-for="Input.IataCode" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.City" class="form-label"></label>
+                <input asp-for="Input.City" class="form-control" />
+                <span asp-validation-for="Input.City" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a asp-page="/Airports/Index" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

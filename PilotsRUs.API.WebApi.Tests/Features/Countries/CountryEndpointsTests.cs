@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using PilotsRUs.API.WebApi.Tests.Infrastructure;
+using PilotsRUs.Shared.SDK.Airports;
 using PilotsRUs.Shared.SDK.Countries;
 
 namespace PilotsRUs.API.WebApi.Tests.Features.Countries;
@@ -138,6 +139,25 @@ public sealed class CountryEndpointsTests(ApiFactory factory) : IClassFixture<Ap
 
         var getResponse = await client.GetAsync($"/countries/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_WithExistingAirports_ReturnsConflict()
+    {
+        var (client, _) = await factory.CreateAuthenticatedClientAsync("countries-delete-guard@pilotsrus.test", "P@ssw0rd123!");
+        var createResponse = await client.PostAsJsonAsync("/countries", new CreateCountryRequest("Testlandia Airport Guard", "XA", "XAA"));
+        var country = await createResponse.Content.ReadFromJsonAsync<CountryResponse>();
+        var airportResponse = await client.PostAsJsonAsync("/airports", new CreateAirportRequest("Test Field Guard", "ZZTX", null, "Testville", country!.Id));
+        var airport = await airportResponse.Content.ReadFromJsonAsync<AirportResponse>();
+
+        var blockedResponse = await client.DeleteAsync($"/countries/{country.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, blockedResponse.StatusCode);
+
+        var deleteAirportResponse = await client.DeleteAsync($"/airports/{airport!.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteAirportResponse.StatusCode);
+
+        var allowedResponse = await client.DeleteAsync($"/countries/{country.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, allowedResponse.StatusCode);
     }
 
     [Fact]

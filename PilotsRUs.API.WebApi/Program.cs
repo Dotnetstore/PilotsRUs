@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
 using PilotsRUs.API.WebApi.Features.AircraftModels;
+using PilotsRUs.API.WebApi.Features.Airports;
 using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.API.WebApi.Features.Countries;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
@@ -55,6 +56,11 @@ await AircraftModelSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFa
 // all reference-data seeders grouped together. Runs unconditionally/idempotently, same as the others.
 await CountrySeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
 
+// Must run after CountrySeeder - resolves CountryId by IsoAlpha2Code, which requires country rows to
+// already exist. Same unconditional/every-environment reasoning as the other seeders. Empty array for now
+// - the user fills this in later; no-ops until then.
+await AirportSeeder.SeedAsync(app.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
+
 if (app.Environment.IsDevelopment())
 {
     using var seederScope = app.Services.CreateScope();
@@ -72,6 +78,7 @@ app.MapUserEndpoints();
 app.MapManufacturerEndpoints();
 app.MapAircraftModelEndpoints();
 app.MapCountryEndpoints();
+app.MapAirportEndpoints();
 
 var summaries = new[]
 {

@@ -105,10 +105,25 @@ public static class CountryEndpoints
                 return Results.NotFound();
             }
 
-            // Hard delete - no FK references Country yet (unlike Manufacturer -> AircraftModel). Add the
-            // same Restrict + pre-check guard pattern here once something eventually references Country.
+            // Blocks deletion rather than cascading - same reasoning as Manufacturer -> AircraftModel. The
+            // FK itself uses DeleteBehavior.Restrict; this pre-check turns what would otherwise be an
+            // unhandled 500 (FK violation) into a clean 409.
+            if (await dbContext.Airports.AnyAsync(a => a.CountryId == id))
+            {
+                return Results.Conflict($"Cannot delete '{country.Name}' - it still has airports. Delete or reassign them first.");
+            }
+
             dbContext.Countries.Remove(country);
-            await dbContext.SaveChangesAsync();
+
+            try
+            {
+                await dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Closes the TOCTOU gap between the AnyAsync check above and this delete.
+                return Results.Conflict($"Cannot delete '{country.Name}' - it still has airports. Delete or reassign them first.");
+            }
 
             return Results.NoContent();
         }).WithName("DeleteCountry");

@@ -1,0 +1,41 @@
+@page
+@model PilotsRUs.Admin.App.Pages.Airports.IndexModel
+@{
+    ViewData["Title"] = "Airports";
+}
+
+<p><a asp-page="/Airports/Create" class="btn btn-primary">Create new airport</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>ICAO</th>
+                    <th>IATA</th>
+                    <th>City</th>
+                    <th>Country</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var airport in Model.Airports)
+                {
+                    <tr>
+                        <td>@airport.Name</td>
+                        <td>@airport.IcaoCode</td>
+                        <td>@airport.IataCode</td>
+                        <td>@airport.City</td>
+                        <td>@airport.CountryName</td>
+                        <td>
+                            <a asp-page="/Airports/Edit" asp-route-id="@airport.Id">Edit</a>
+                            <text> | </text>
+                            <a asp-page="/Airports/Delete" asp-route-id="@airport.Id">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

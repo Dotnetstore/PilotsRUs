@@ -300,11 +300,48 @@ both codes are intended to always be populated — never left null the way `Manu
   on `/countries/*`, `AuthorizeFolder("/Countries")` with no policy argument on the Admin.App side, nav link
   gated on `User.Identity?.IsAuthenticated` (added as a third item in the same shared `@if` block that
   already wraps Manufacturers + Aircraft Models in `_Layout.cshtml`, not a new `@if`).
-- **Hard delete, no guard** — nothing references `Country` via FK yet, so (unlike `DeleteManufacturer`)
-  `DeleteCountry` has no pre-check. Add the same `Restrict` + pre-check guard pattern once something
-  eventually references `Country` (e.g. a future `Manufacturer.CountryId`).
+- **Hard delete, now guarded**: `DeleteCountry` blocks deletion (409) while any `Airport` still references
+  the country (see "Airports" below) — the same `Restrict` + pre-check pattern `DeleteManufacturer` already
+  had for `AircraftModel`. This closed the exact gap this section's comment used to flag as deferred.
 - **Admin.App pages** (`Pages/Countries/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
   Manufacturers — no dropdown needed (no FK).
+
+## Airports
+
+`Country`'s first dependent entity. `Data/Airport.cs`: `Guid` PK, required `Name` (**not** unique — real
+airport names collide often, e.g. many small airports are literally named "Municipal Airport"), required
+unique `IcaoCode` (4 letters — the true natural key, always present for a real airport), optional
+`IataCode` (3 letters, unique when present — many smaller/regional/private airports genuinely have none),
+required `City` (plain string), required `CountryId` (FK to `Country`, `DeleteBehavior.Restrict`, chosen
+via dropdown in Admin.App).
+
+- **Seeding, and its data-quality lesson**: `Data/AirportSeeder.cs` follows the same
+  unconditional/idempotent/every-environment pattern as the other seeders, called after `CountrySeeder`
+  (resolves `CountryId` by the country's `IsoAlpha2Code` — a short, hand-typeable business key rather than a
+  raw Guid, so whoever edits `SeedAirports` doesn't need to look up and paste GUIDs). The seed array is
+  **hand-maintained data, not machine-generated** — when it was first populated, it contained 5 accidental
+  duplicate ICAO codes (two real airports mistakenly given the same code, plus a few fully-duplicated rows)
+  that would have thrown an unhandled `DbUpdateException` at startup (two rows with the same unique ICAO in
+  one `AddRange`/`SaveChangesAsync` batch). Fixed both ways: the bad data was corrected, **and**
+  `AirportSeeder.SeedAsync` itself was hardened to track ICAO/IATA codes already queued *within the same
+  pass* (`HashSet<string>.Add(...)` returning `false` on a repeat), not just codes already committed to the
+  DB — so a future accidental duplicate added by hand degrades to "one of the two rows silently skipped"
+  instead of crashing the app. Keep this defensive pattern if `SeedAirports` grows further.
+- **Authorization**: same as Manufacturers/Aircraft Models/Countries — `.RequireAuthorization()` with no
+  policy name on `/airports/*`, `AuthorizeFolder("/Airports")` with no policy argument on the Admin.App
+  side, nav link in the same shared authenticated-user `@if` block in `_Layout.cshtml`.
+- **Country-existence validation**: `POST`/`PUT` on `Features/Airports/AirportEndpoints.cs` look up the
+  referenced `CountryId` first and return `Results.BadRequest(string)` if it doesn't exist, mirroring
+  `AircraftModelEndpoints`'s `ManufacturerId`-exists check.
+- **Code normalization**: `IcaoCode`/`IataCode` are normalized via `.ToUpperInvariant()` before the
+  uniqueness checks and the save, same as `Country`'s ISO codes.
+- **Test data convention**: `AirportEndpointsTests` uses synthetic `ZZT`-prefixed ICAO/IATA codes (e.g.
+  `ZZTA`), since `AirportSeeder` is expected to carry real airport data. Unlike `Country` (ISO 3166-1 has a
+  formally reserved "user-assigned" range), airport codes have no equivalent official reserved block, so
+  this is a best-effort convention, not a guarantee — follow it for any future test that creates an
+  `Airport`.
+- **Admin.App pages** (`Pages/Airports/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
+  AircraftModels, with a Country `<select>` dropdown mirroring the Manufacturer picker exactly.
 
 ## Architecture principles
 
@@ -329,11 +366,12 @@ conflict since they resolve via different service types — don't collapse them 
 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
-  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`. Identity's own
-  tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels` (the
-  first FK relationship between two non-Identity entities — see "Aircraft Models" above), and `Countries`.
+  `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`,
+  `Data/Airport.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`,
+  `Manufacturers`, `AircraftModels` (the first FK relationship between two non-Identity entities — see
+  "Aircraft Models" above), `Countries`, and `Airports` (FK to `Countries`).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
-  `AddManufacturers`, `AddAircraftModels`, `AddCountries`). `dotnet ef migrations add
+  `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`). `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`

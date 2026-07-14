@@ -10,6 +10,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Manufacturer> Manufacturers => Set<Manufacturer>();
     public DbSet<AircraftModel> AircraftModels => Set<AircraftModel>();
     public DbSet<Country> Countries => Set<Country>();
+    public DbSet<Airport> Airports => Set<Airport>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -46,6 +47,17 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(c => c.Name).IsUnique();
             entity.HasIndex(c => c.IsoAlpha2Code).IsUnique();
             entity.HasIndex(c => c.IsoAlpha3Code).IsUnique();
+        });
+
+        builder.Entity<Airport>(entity =>
+        {
+            entity.Property(a => a.Name).IsRequired().HasMaxLength(200);
+            entity.Property(a => a.IcaoCode).IsRequired().HasMaxLength(4);
+            entity.Property(a => a.IataCode).HasMaxLength(3);
+            entity.Property(a => a.City).IsRequired().HasMaxLength(200);
+            entity.HasIndex(a => a.IcaoCode).IsUnique();
+            entity.HasIndex(a => a.IataCode).IsUnique().HasFilter("\"IataCode\" IS NOT NULL");
+            entity.HasOne(a => a.Country).WithMany().HasForeignKey(a => a.CountryId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
