@@ -1,0 +1,61 @@
+@page
+@model PilotsRUs.Admin.App.Pages.ScheduleTemplates.CreateModel
+@{
+    ViewData["Title"] = "Create schedule template";
+}
+
+<div class="card">
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="Input.FlightNumber" class="form-label"></label>
+                <input asp-for="Input.FlightNumber" class="form-control" />
+                <span asp-validation-for="Input.FlightNumber" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.DepartureAirportId" class="form-label">Departure Airport</label>
+                <select asp-for="Input.DepartureAirportId" asp-items="Model.DepartureAirportOptions" class="form-select">
+                    <option value="">-- Select Departure Airport --</option>
+                </select>
+                <span asp-validation-for="Input.DepartureAirportId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.ArrivalAirportId" class="form-label">Arrival Airport</label>
+                <select asp-for="Input.ArrivalAirportId" asp-items="Model.ArrivalAirportOptions" class="form-select">
+                    <option value="">-- Select Arrival Airport --</option>
+                </select>
+                <span asp-validation-for="Input.ArrivalAirportId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.AircraftId" class="form-label">Aircraft</label>
+                <select asp-for="Input.AircraftId" asp-items="Model.AircraftOptions" class="form-select">
+                    <option value="">-- Select Aircraft --</option>
+                </select>
+                <span asp-validation-for="Input.AircraftId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.DistanceNauticalMiles" class="form-label">Distance (nautical miles)</label>
+                <input asp-for="Input.DistanceNauticalMiles" class="form-control" />
+                <span asp-validation-for="Input.DistanceNauticalMiles" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.FlightTime" class="form-label"></label>
+                <input asp-for="Input.FlightTime" type="time" class="form-control" />
+                <span asp-validation-for="Input.FlightTime" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Frequency" class="form-label"></label>
+                <select asp-for="Input.Frequency" asp-items="Model.FrequencyOptions" class="form-select"></select>
+                <span asp-validation-for="Input.Frequency" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary">Create</button>
+            <a asp-page="/ScheduleTemplates/Index" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,45 @@
+@page
+@model PilotsRUs.Admin.App.Pages.ScheduleTemplates.IndexModel
+@{
+    ViewData["Title"] = "Schedule Templates";
+}
+
+<p><a asp-page="/ScheduleTemplates/Create" class="btn btn-primary">Create new schedule template</a></p>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Flight #</th>
+                    <th>Departure</th>
+                    <th>Arrival</th>
+                    <th>Aircraft</th>
+                    <th>Distance (nm)</th>
+                    <th>Flight Time</th>
+                    <th>Frequency</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var scheduleTemplate in Model.ScheduleTemplates)
+                {
+                    <tr>
+                        <td>@scheduleTemplate.FlightNumber</td>
+                        <td>@scheduleTemplate.DepartureAirportIcaoCode - @scheduleTemplate.DepartureAirportName</td>
+                        <td>@scheduleTemplate.ArrivalAirportIcaoCode - @scheduleTemplate.ArrivalAirportName</td>
+                        <td>@scheduleTemplate.AircraftRegistrationNumber</td>
+                        <td>@scheduleTemplate.DistanceNauticalMiles</td>
+                        <td>@scheduleTemplate.FlightTime</td>
+                        <td>@scheduleTemplate.Frequency</td>
+                        <td>
+                            <a asp-page="/ScheduleTemplates/Edit" asp-route-id="@scheduleTemplate.Id">Edit</a>
+                            <text> | </text>
+                            <a asp-page="/ScheduleTemplates/Delete" asp-route-id="@scheduleTemplate.Id">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

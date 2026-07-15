@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
@@ -8,6 +9,7 @@ using PilotsRUs.API.WebApi.Features.Airports;
 using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.API.WebApi.Features.Countries;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
+using PilotsRUs.API.WebApi.Features.ScheduleTemplates;
 using PilotsRUs.API.WebApi.Features.SoftwareDevelopers;
 using PilotsRUs.API.WebApi.Features.Users;
 
@@ -20,6 +22,12 @@ builder.AddApplicationJwtAuth();
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// ScheduleTemplate.Frequency is the only enum exposed via an API DTO today - serialize it as its member
+// name ("Daily", not 0) to match the string-based DB storage in ApplicationDbContext, and to keep the
+// wire format self-describing. Registered globally since this affects zero existing behavior yet.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 var app = builder.Build();
 
@@ -83,6 +91,7 @@ app.MapCountryEndpoints();
 app.MapAirportEndpoints();
 app.MapSoftwareDeveloperEndpoints();
 app.MapAircraftEndpoints();
+app.MapScheduleTemplateEndpoints();
 
 var summaries = new[]
 {

@@ -17,13 +17,13 @@ The solution scaffold plus a working infra layer are in place: Postgres/EF Core 
 login with rotating refresh tokens, role-based authorization (a single "Admin" role) with a full Users CRUD
 management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see "Authentication",
 "Authorization and Users CRUD", and "Database" below. **Manufacturer** → **Aircraft Model** → **Country** →
-**Airport** → **Software Developer** → **Aircraft** are all shipped, with `Aircraft` (see "Aircraft" below)
-the first entity that ties everything else together (which `AircraftModel` a specific registered airplane
-is, plus its own registration number, seating/cargo capacity, and MSFS add-on developer). Other domain
-entities (Pilot, Airline, Job, etc.) still don't exist; don't invent them speculatively — add them only as
-their own scoped features, following the established CRUD pattern where it fits. When adding new projects,
-register them in `PilotsRUs.slnx` (the XML-based solution format — add `<Project Path="..." />` entries,
-not a `.sln` file).
+**Airport** → **Software Developer** → **Aircraft** → **Schedule Template** are all shipped. `Schedule
+Template` (see "Schedule Templates" below) is a reusable recurring-flight definition (route, aircraft,
+timing, frequency) that a not-yet-built **Schedule** feature will later expand into actual dated flight
+instances — `Schedule` itself doesn't exist yet, don't invent it speculatively. Other domain entities
+(Pilot, Airline, Job, etc.) also still don't exist; add them only as their own scoped features, following
+the established CRUD pattern where it fits. When adding new projects, register them in `PilotsRUs.slnx`
+(the XML-based solution format — add `<Project Path="..." />` entries, not a `.sln` file).
 
 ## Project structure
 
@@ -414,6 +414,65 @@ required `SoftwareDeveloperId` (FK to `SoftwareDeveloper`, `Restrict`).
   `GET /software-developers`, label = `Name`). `Delete.cshtml.cs` stays the plain "Delete failed." shape
   (no `Conflict`-message surfacing) since nothing depends on `Aircraft` yet.
 
+## Schedule Templates
+
+A reusable definition of a recurring flight — the first entity with **two foreign keys to the same table**
+and the first with an **enum-typed field**. `Data/ScheduleTemplate.cs`: `Guid` PK, required `FlightNumber`
+(max 10 chars, **not unique** — there's no `Airline` entity yet to scope uniqueness against, so this is the
+first domain entity in the codebase with zero uniqueness rules and therefore no `Results.Conflict` path
+anywhere in its Create/Update handlers), required `DepartureAirportId`/`ArrivalAirportId` (both FK to
+`Airport`, `Restrict`, each with its own `HasOne(...).WithMany().HasForeignKey(...)` call and no inverse
+collection navigation — same no-cascade-path concern as everywhere else, since nothing here uses `Cascade`),
+required `AircraftId` (FK to `Aircraft`, `Restrict`), required `DistanceNauticalMiles` (`int`, manually
+entered — `Airport` has no lat/long yet, so this can't be computed from the two chosen airports), required
+`FlightTime` (`TimeSpan`, maps to Postgres' native `interval` type), required `Frequency`
+(`ScheduleFrequency`, see below).
+
+- **`ScheduleFrequency` lives in `Shared.SDK/ScheduleTemplates/`, not `Data/`**: `{ Daily, EverySecondDay,
+  EveryThirdDay, EveryFourthDay, EveryFifthDay, EverySixthDay, Weekly }` — it has to be usable both by the
+  EF entity (`API.WebApi` already references `Shared.SDK`) and directly by the DTOs
+  (`CreateScheduleTemplateRequest`/`UpdateScheduleTemplateRequest`/`ScheduleTemplateResponse`) without
+  duplicating the type, same "single definition shared via Shared.SDK" reasoning as
+  `AuthConstants.AdminRoleName`.
+- **First enum stored in the DB and returned over the wire**: `ApplicationDbContext` maps
+  `entity.Property(s => s.Frequency).HasConversion<string>().HasMaxLength(20)` — stored as the member name
+  (`"Daily"`), not the default int, so it survives future enum reordering and reads legibly straight out of
+  the table. To match that on the API response side, `Program.cs` registers `JsonStringEnumConverter`
+  globally via `ConfigureHttpJsonOptions` — safe since `ScheduleFrequency` is the only enum in any API DTO
+  today, so this changes zero existing behavior.
+  - **Gotcha**: this `ConfigureHttpJsonOptions` registration only affects the API's own request/response
+    JSON pipeline (server-side minimal API model binding/`Results.Ok(...)`). Any `HttpClient`-side call —
+    `ApiFactory`-based tests, and `Admin.App`'s `"Api"` named `HttpClient` — uses
+    `System.Text.Json`'s *default* options and does **not** inherit it. Every
+    `PostAsJsonAsync`/`ReadFromJsonAsync` call that sends or receives a `ScheduleTemplateResponse` or
+    `Create`/`UpdateScheduleTemplateRequest` must pass an explicit
+    `JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } }` (a `private static readonly
+    JsonOptions` field in each call site — `ScheduleTemplateEndpointsTests.cs` and every `Pages/
+    ScheduleTemplates/*.cshtml.cs` PageModel) or deserializing the API's `"Daily"` string response throws.
+    Follow this pattern for any future enum-bearing DTO.
+- **Same-airport validation**: `POST`/`PUT` reject `DepartureAirportId == ArrivalAirportId` with
+  `Results.BadRequest("Departure and arrival airport cannot be the same.")`, checked after both FK-existence
+  checks and before the (also FK-existence-only) `AircraftId` check.
+- **No seed data** — same reasoning as `SoftwareDeveloper`/`Aircraft`: only makes sense once real Airports
+  and a real Aircraft exist to reference.
+- **No delete guard yet**: `DeleteScheduleTemplate` is a genuine hard delete — nothing references
+  `ScheduleTemplate` yet. Once the future `Schedule` entity does, it needs the same `Restrict` + pre-check
+  guard treatment every other guarded delete in this codebase has.
+- **Authorization**: same as every other domain entity — `.RequireAuthorization()` with no policy name on
+  `/schedule-templates/*`, `AuthorizeFolder("/ScheduleTemplates")` with no policy argument on the Admin.App
+  side, nav link in the same shared authenticated-user `@if` block in `_Layout.cshtml`.
+- **Admin.App pages** (`Pages/ScheduleTemplates/Index|Create|Edit|Delete.cshtml(.cs)`): the first form with
+  **three** FK dropdowns in one Create/Edit page (`DepartureAirportOptions`/`ArrivalAirportOptions`, each
+  its own separately-materialized `List<SelectListItem>` from `GET /airports` even though built from the
+  same response — sharing one list instance across two independent `<select>` tag helpers risks one
+  dropdown's selection state bleeding into the other; `AircraftOptions` from `GET /aircrafts`) plus a fourth,
+  `FrequencyOptions`, built locally from `Enum.GetValues<ScheduleFrequency>()`/a small friendly-label map
+  (`"Every 2 Days"`, not the raw member name) with no API round-trip needed. `InputModel.FlightTime` is
+  typed `TimeOnly` (not `TimeSpan`) specifically so `<input asp-for="Input.FlightTime" type="time">` binds
+  natively via ASP.NET Core's built-in `TimeOnly` support — the PageModel converts
+  `Input.FlightTime.ToTimeSpan()` on submit and `TimeOnly.FromTimeSpan(response.FlightTime)` on `Edit`'s
+  `OnGetAsync`. `Delete.cshtml.cs` stays the plain "Delete failed." shape.
+
 ## Architecture principles
 
 - Modular monolith with vertical slice architecture, following SOLID principles
@@ -438,20 +497,22 @@ conflict since they resolve via different service types — don't collapse them 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
   `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`,
-  `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`. Identity's own tables (`AspNetUsers`,
-  `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels` (the first FK relationship
-  between two non-Identity entities — see "Aircraft Models" above), `Countries`, `Airports` (FK to
-  `Countries`), `SoftwareDevelopers`, and `Aircraft` (FK to both `AircraftModels` and `SoftwareDevelopers`
-  — see "Aircraft" above).
+  `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`, `Data/ScheduleTemplate.cs`. Identity's
+  own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels`
+  (the first FK relationship between two non-Identity entities — see "Aircraft Models" above), `Countries`,
+  `Airports` (FK to `Countries`), `SoftwareDevelopers`, `Aircraft` (FK to both `AircraftModels` and
+  `SoftwareDevelopers` — see "Aircraft" above), and `ScheduleTemplates` (FK to `Airports` twice plus
+  `Aircraft` once — see "Schedule Templates" above).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
   `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`,
-  `AddSoftwareDevelopersAndAircraft`). The last one is a single combined migration rather than two separate
-  ones — both entities were added to `ApplicationDbContext` in the same edit before either
-  `migrations add` call, so a first `AddSoftwareDevelopers` migration would have captured both tables'
-  diff anyway, leaving a follow-up `AddAircraft` migration empty; add entities across separate edits+
-  `migrations add` calls if a genuinely separate migration per entity is wanted. `dotnet ef migrations add
-  <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
-  `Data/DesignTimeDbContextFactory.cs` since the context is registered via
+  `AddSoftwareDevelopersAndAircraft`, `AddScheduleTemplates`). `AddSoftwareDevelopersAndAircraft` is a
+  single combined migration rather than two separate ones — both entities were added to
+  `ApplicationDbContext` in the same edit before either `migrations add` call, so a first
+  `AddSoftwareDevelopers` migration would have captured both tables' diff anyway, leaving a follow-up
+  `AddAircraft` migration empty; add entities across separate edits+`migrations add` calls if a genuinely
+  separate migration per entity is wanted (as `AddScheduleTemplates` did, being the only entity added in its
+  edit). `dotnet ef migrations add <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations`
+  (needs `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
   pattern EF tools auto-discover).
 - Applied automatically at startup, gated to `IsDevelopment()` (`Program.cs`) — no separate migrator

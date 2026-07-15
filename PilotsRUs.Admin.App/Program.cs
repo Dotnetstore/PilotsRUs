@@ -14,7 +14,8 @@ builder.Services.AddRazorPages(options => options.Conventions
     .AuthorizeFolder("/Countries")
     .AuthorizeFolder("/Airports")
     .AuthorizeFolder("/SoftwareDevelopers")
-    .AuthorizeFolder("/Aircrafts"));
+    .AuthorizeFolder("/Aircrafts")
+    .AuthorizeFolder("/ScheduleTemplates"));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

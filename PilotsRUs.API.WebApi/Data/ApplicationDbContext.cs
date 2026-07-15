@@ -13,6 +13,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Airport> Airports => Set<Airport>();
     public DbSet<SoftwareDeveloper> SoftwareDevelopers => Set<SoftwareDeveloper>();
     public DbSet<Aircraft> Aircraft => Set<Aircraft>();
+    public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -74,6 +75,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(a => a.RegistrationNumber).IsUnique();
             entity.HasOne(a => a.AircraftModel).WithMany().HasForeignKey(a => a.AircraftModelId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(a => a.SoftwareDeveloper).WithMany().HasForeignKey(a => a.SoftwareDeveloperId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ScheduleTemplate>(entity =>
+        {
+            entity.Property(s => s.FlightNumber).IsRequired().HasMaxLength(10);
+            entity.Property(s => s.Frequency).HasConversion<string>().HasMaxLength(20);
+            entity.HasOne(s => s.DepartureAirport).WithMany().HasForeignKey(s => s.DepartureAirportId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.ArrivalAirport).WithMany().HasForeignKey(s => s.ArrivalAirportId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.Aircraft).WithMany().HasForeignKey(s => s.AircraftId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
