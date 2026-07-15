@@ -16,12 +16,14 @@ three parts:
 The solution scaffold plus a working infra layer are in place: Postgres/EF Core (via Aspire), JWT-based
 login with rotating refresh tokens, role-based authorization (a single "Admin" role) with a full Users CRUD
 management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see "Authentication",
-"Authorization and Users CRUD", and "Database" below. **Manufacturer** (see "Manufacturers" below) is the
-first business/domain entity to ship, registering airplane manufacturers as the starting point for
-registering airplanes. Other domain entities (Pilot, Airline, Job, Aircraft, etc.) still don't exist; don't
-invent them speculatively — add them only as their own scoped features, following Manufacturer's pattern
-where it fits. When adding new projects, register them in `PilotsRUs.slnx` (the XML-based solution format —
-add `<Project Path="..." />` entries, not a `.sln` file).
+"Authorization and Users CRUD", and "Database" below. **Manufacturer** → **Aircraft Model** → **Country** →
+**Airport** → **Software Developer** → **Aircraft** are all shipped, with `Aircraft` (see "Aircraft" below)
+the first entity that ties everything else together (which `AircraftModel` a specific registered airplane
+is, plus its own registration number, seating/cargo capacity, and MSFS add-on developer). Other domain
+entities (Pilot, Airline, Job, etc.) still don't exist; don't invent them speculatively — add them only as
+their own scoped features, following the established CRUD pattern where it fits. When adding new projects,
+register them in `PilotsRUs.slnx` (the XML-based solution format — add `<Project Path="..." />` entries,
+not a `.sln` file).
 
 ## Project structure
 
@@ -343,6 +345,75 @@ via dropdown in Admin.App).
 - **Admin.App pages** (`Pages/Airports/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
   AircraftModels, with a Country `<select>` dropdown mirroring the Manufacturer picker exactly.
 
+## Software Developers
+
+A standalone reference/lookup entity introduced specifically to support "Aircraft" (below) — records which
+company produced a specific airplane's MSFS add-on/software (e.g. PMDG, Fenix, FlyByWire, iniBuilds).
+`Data/SoftwareDeveloper.cs`: `Guid` PK, required unique `Name` — deliberately minimal (no optional `Code`
+field like `Manufacturer`, since nothing was asked for beyond a name).
+
+- **No seed data** — unlike every other reference entity so far (Manufacturer/AircraftModel/Country/Airport),
+  this one starts empty and stays that way per explicit user instruction; admins populate it via the UI as
+  they register aircraft.
+- **Authorization**: same as Manufacturers/Aircraft Models/Countries/Airports — `.RequireAuthorization()`
+  with no policy name on `/software-developers/*`, `AuthorizeFolder("/SoftwareDevelopers")` with no policy
+  argument on the Admin.App side, nav link in the same shared authenticated-user `@if` block in
+  `_Layout.cshtml`.
+- **Hard delete, guarded**: `DeleteSoftwareDeveloper` blocks deletion (409) while any `Aircraft` still
+  references it — same `Restrict` + pre-check pattern as `DeleteManufacturer`/`DeleteCountry`.
+- **Admin.App pages** (`Pages/SoftwareDevelopers/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
+  Manufacturers minus the `Code` field — no dropdown needed (no FK).
+
+## Aircraft
+
+The entity that ties everything else together — a specific, individually registered airplane. `Data/Aircraft.cs`:
+`Guid` PK, required unique `RegistrationNumber` (tail number, e.g. `N12345`, `G-ABCD` — the real-world
+natural identity of a specific aircraft; normalized via `.ToUpperInvariant()` before uniqueness checks and
+save, same convention as `Country`'s ISO codes/`Airport`'s ICAO/IATA codes, with a generous
+`MaxLength(20)` since no single global tail-number format exists), required non-negative
+`PassengerCapacityEconomy`/`PassengerCapacityBusiness`/`PassengerCapacityFirst` (`int`, defaulting to 0 at
+the form level — e.g. a cargo-only aircraft has 0/0/0), required non-negative `CargoCapacityKg` (kilograms —
+the standard aviation payload unit), required `AircraftModelId` (FK to `AircraftModel`, `Restrict`) and
+required `SoftwareDeveloperId` (FK to `SoftwareDeveloper`, `Restrict`).
+
+- **No seed data**, same as `SoftwareDeveloper` and for the same reason — Aircraft are real user-registered
+  instances, not reference/master data, unlike Manufacturer/AircraftModel/Country/Airport.
+- **Namespace/folder naming**: unlike every prior feature, the C# namespace/folder/route level uses the
+  **plural `Aircrafts`** (`Features/Aircrafts/AircraftEndpoints.cs`, `Shared.SDK/Aircrafts/`,
+  `Pages/Aircrafts/`, route `/aircrafts`) even though the entity type itself stays singular `Aircraft`. This
+  is deliberate: "aircraft" is grammatically invariant (same singular/plural), so a namespace segment
+  literally named `Aircraft` sharing a file with the type `Aircraft` risks a C# namespace-vs-type name
+  collision — the same category of gotcha (not the same mechanism) as the `model`/`@model` Razor collision
+  documented under "Aircraft Models" above. Using the plural namespace/folder — exactly the "singular type,
+  plural namespace" pattern `AircraftModel`/`AircraftModels` already establishes safely — sidesteps it
+  entirely. `ApplicationDbContext.Aircraft` (the `DbSet<Aircraft>` property) is fine as-is since properties
+  aren't subject to this collision.
+- **Response flattening**: `AircraftResponse` flattens `AircraftModelName` + `ManufacturerName` (via
+  `.Include(a => a.AircraftModel).ThenInclude(m => m.Manufacturer)`) and `SoftwareDeveloperName`, mirroring
+  how `AircraftModelResponse` already flattens `ManufacturerName`. The list endpoint materializes entities
+  first (`.ToListAsync()`) and maps to `AircraftResponse` in-memory afterward — the flattening helper
+  (`ToResponse`) isn't SQL-translatable, so it can't be used inside an EF `.Select()` the way inline
+  `new AircraftModelResponse(...)` projections are elsewhere.
+- **Two existence pre-checks**: `POST`/`PUT` on `Features/Aircrafts/AircraftEndpoints.cs` look up
+  `AircraftModelId` and `SoftwareDeveloperId` first, both returning `Results.BadRequest(string)` if missing
+  (mirroring `AircraftModelEndpoints`'s `ManufacturerId`-exists check), before the `RegistrationNumber`
+  uniqueness check (409).
+- **Authorization**: same as every other domain entity — `.RequireAuthorization()` with no policy name on
+  `/aircrafts/*`, `AuthorizeFolder("/Aircrafts")` with no policy argument on the Admin.App side, nav link in
+  the same shared authenticated-user `@if` block in `_Layout.cshtml`.
+- **Retrofitted delete guards**: adding `Aircraft` resolved the two "once a future Aircraft entity
+  references..." follow-ups this file used to flag as deferred — `DeleteAircraftModel`
+  (`Features/AircraftModels/AircraftModelEndpoints.cs`) and `DeleteSoftwareDeveloper` both now block (409)
+  while any `Aircraft` still references them, same `Restrict` + pre-check pattern as every other guarded
+  delete in this codebase. `DeleteAircraft` itself is a genuine hard delete for now — nothing references
+  `Aircraft` yet.
+- **Admin.App pages** (`Pages/Aircrafts/Index|Create|Edit|Delete.cshtml(.cs)`): same structure as
+  AircraftModels/Airports, but the first form with **two** `<select>`/`asp-items`/`SelectListItem` dropdowns
+  in the same Create/Edit page — `AircraftModelOptions` (populated from `GET /aircraft-models`, label
+  `"{ManufacturerName} {ModelName}"`) and `SoftwareDeveloperOptions` (populated from
+  `GET /software-developers`, label = `Name`). `Delete.cshtml.cs` stays the plain "Delete failed." shape
+  (no `Conflict`-message surfacing) since nothing depends on `Aircraft` yet.
+
 ## Architecture principles
 
 - Modular monolith with vertical slice architecture, following SOLID principles
@@ -367,11 +438,18 @@ conflict since they resolve via different service types — don't collapse them 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
   `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`,
-  `Data/Airport.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`,
-  `Manufacturers`, `AircraftModels` (the first FK relationship between two non-Identity entities — see
-  "Aircraft Models" above), `Countries`, and `Airports` (FK to `Countries`).
+  `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`. Identity's own tables (`AspNetUsers`,
+  `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels` (the first FK relationship
+  between two non-Identity entities — see "Aircraft Models" above), `Countries`, `Airports` (FK to
+  `Countries`), `SoftwareDevelopers`, and `Aircraft` (FK to both `AircraftModels` and `SoftwareDevelopers`
+  — see "Aircraft" above).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
-  `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`). `dotnet ef migrations add
+  `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`,
+  `AddSoftwareDevelopersAndAircraft`). The last one is a single combined migration rather than two separate
+  ones — both entities were added to `ApplicationDbContext` in the same edit before either
+  `migrations add` call, so a first `AddSoftwareDevelopers` migration would have captured both tables'
+  diff anyway, leaving a follow-up `AddAircraft` migration empty; add entities across separate edits+
+  `migrations add` calls if a genuinely separate migration per entity is wanted. `dotnet ef migrations add
   <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
   `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`

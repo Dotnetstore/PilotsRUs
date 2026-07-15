@@ -1,0 +1,59 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.Aircrafts.EditModel
+@{
+    ViewData["Title"] = "Edit aircraft";
+}
+
+<div class="card">
+    <div class="card-body">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="Input.RegistrationNumber" class="form-label"></label>
+                <input asp-for="Input.RegistrationNumber" class="form-control" />
+                <span asp-validation-for="Input.RegistrationNumber" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.AircraftModelId" class="form-label">Aircraft Model</label>
+                <select asp-for="Input.AircraftModelId" asp-items="Model.AircraftModelOptions" class="form-select">
+                    <option value="">-- Select Aircraft Model --</option>
+                </select>
+                <span asp-validation-for="Input.AircraftModelId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.SoftwareDeveloperId" class="form-label">Software Developer</label>
+                <select asp-for="Input.SoftwareDeveloperId" asp-items="Model.SoftwareDeveloperOptions" class="form-select">
+                    <option value="">-- Select Software Developer --</option>
+                </select>
+                <span asp-validation-for="Input.SoftwareDeveloperId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.PassengerCapacityEconomy" class="form-label"></label>
+                <input asp-for="Input.PassengerCapacityEconomy" class="form-control" />
+                <span asp-validation-for="Input.PassengerCapacityEconomy" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.PassengerCapacityBusiness" class="form-label"></label>
+                <input asp-for="Input.PassengerCapacityBusiness" class="form-control" />
+                <span asp-validation-for="Input.PassengerCapacityBusiness" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.PassengerCapacityFirst" class="form-label"></label>
+                <input asp-for="Input.PassengerCapacityFirst" class="form-control" />
+                <span asp-validation-for="Input.PassengerCapacityFirst" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.CargoCapacityKg" class="form-label">Cargo Capacity (kg)</label>
+                <input asp-for="Input.CargoCapacityKg" class="form-control" />
+                <span asp-validation-for="Input.CargoCapacityKg" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a asp-page="/Aircrafts/Index" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

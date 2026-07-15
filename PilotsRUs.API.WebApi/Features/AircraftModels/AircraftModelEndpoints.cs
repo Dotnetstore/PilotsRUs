@@ -116,11 +116,25 @@ public static class AircraftModelEndpoints
                 return Results.NotFound();
             }
 
-            // Hard delete, same reasoning as Manufacturer - no session/lockout state tied to a lookup
-            // entity. Once a future Aircraft entity references AircraftModel via FK, this needs the same
-            // Restrict-guard treatment DeleteManufacturer now has.
+            // Blocks deletion rather than cascading - same reasoning as Manufacturer -> AircraftModel. The
+            // FK itself uses DeleteBehavior.Restrict; this pre-check turns what would otherwise be an
+            // unhandled 500 (FK violation) into a clean 409.
+            if (await dbContext.Aircraft.AnyAsync(a => a.AircraftModelId == id))
+            {
+                return Results.Conflict($"Cannot delete '{model.Name}' - it still has aircraft. Delete or reassign them first.");
+            }
+
             dbContext.AircraftModels.Remove(model);
-            await dbContext.SaveChangesAsync();
+
+            try
+            {
+                await dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Closes the TOCTOU gap between the AnyAsync check above and this delete.
+                return Results.Conflict($"Cannot delete '{model.Name}' - it still has aircraft. Delete or reassign them first.");
+            }
 
             return Results.NoContent();
         }).WithName("DeleteAircraftModel");

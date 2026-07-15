@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using PilotsRUs.API.WebApi.Tests.Infrastructure;
 using PilotsRUs.Shared.SDK.AircraftModels;
+using PilotsRUs.Shared.SDK.Aircrafts;
 using PilotsRUs.Shared.SDK.Manufacturers;
+using PilotsRUs.Shared.SDK.SoftwareDevelopers;
 
 namespace PilotsRUs.API.WebApi.Tests.Features.AircraftModels;
 
@@ -130,6 +132,28 @@ public sealed class AircraftModelEndpointsTests(ApiFactory factory) : IClassFixt
 
         var getResponse = await client.GetAsync($"/aircraft-models/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_WithExistingAircraft_ReturnsConflict()
+    {
+        var (client, _) = await factory.CreateAuthenticatedClientAsync("models-delete-guard@pilotsrus.test", "P@ssw0rd123!");
+        var manufacturer = await CreateManufacturerAsync(client, "Zenith Aircraft 2");
+        var modelResponse = await client.PostAsJsonAsync("/aircraft-models", new CreateAircraftModelRequest("CH 750 Cruzer", null, manufacturer.Id));
+        var model = await modelResponse.Content.ReadFromJsonAsync<AircraftModelResponse>();
+        var softwareDeveloperResponse = await client.PostAsJsonAsync("/software-developers", new CreateSoftwareDeveloperRequest("Zenith SwDev Test"));
+        var softwareDeveloper = await softwareDeveloperResponse.Content.ReadFromJsonAsync<SoftwareDeveloperResponse>();
+        var aircraftResponse = await client.PostAsJsonAsync("/aircrafts", new CreateAircraftRequest("N1ZEN", 2, 0, 0, 50, model!.Id, softwareDeveloper!.Id));
+        var aircraft = await aircraftResponse.Content.ReadFromJsonAsync<AircraftResponse>();
+
+        var blockedResponse = await client.DeleteAsync($"/aircraft-models/{model.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, blockedResponse.StatusCode);
+
+        var deleteAircraftResponse = await client.DeleteAsync($"/aircrafts/{aircraft!.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteAircraftResponse.StatusCode);
+
+        var allowedResponse = await client.DeleteAsync($"/aircraft-models/{model.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, allowedResponse.StatusCode);
     }
 
     [Fact]

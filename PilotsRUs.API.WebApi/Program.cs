@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
 using PilotsRUs.API.WebApi.Features.AircraftModels;
+using PilotsRUs.API.WebApi.Features.Aircrafts;
 using PilotsRUs.API.WebApi.Features.Airports;
 using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.API.WebApi.Features.Countries;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
+using PilotsRUs.API.WebApi.Features.SoftwareDevelopers;
 using PilotsRUs.API.WebApi.Features.Users;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -79,6 +81,8 @@ app.MapManufacturerEndpoints();
 app.MapAircraftModelEndpoints();
 app.MapCountryEndpoints();
 app.MapAirportEndpoints();
+app.MapSoftwareDeveloperEndpoints();
+app.MapAircraftEndpoints();
 
 var summaries = new[]
 {

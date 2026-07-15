@@ -1,0 +1,24 @@
+@page "{id:guid}"
+@model PilotsRUs.Admin.App.Pages.SoftwareDevelopers.DeleteModel
+@{
+    ViewData["Title"] = "Delete software developer";
+}
+
+<div class="card">
+    <div class="card-body">
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+        }
+
+        @if (Model.TargetSoftwareDeveloper is not null)
+        {
+            <p>Delete <strong>@Model.TargetSoftwareDeveloper.Name</strong>? This cannot be undone.</p>
+
+            <form method="post">
+                <button type="submit" class="btn btn-danger">Delete</button>
+                <a asp-page="/SoftwareDevelopers/Index" class="btn btn-secondary">Cancel</a>
+            </form>
+        }
+    </div>
+</div>

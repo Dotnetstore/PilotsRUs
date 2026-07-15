@@ -11,6 +11,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AircraftModel> AircraftModels => Set<AircraftModel>();
     public DbSet<Country> Countries => Set<Country>();
     public DbSet<Airport> Airports => Set<Airport>();
+    public DbSet<SoftwareDeveloper> SoftwareDevelopers => Set<SoftwareDeveloper>();
+    public DbSet<Aircraft> Aircraft => Set<Aircraft>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -58,6 +60,20 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(a => a.IcaoCode).IsUnique();
             entity.HasIndex(a => a.IataCode).IsUnique().HasFilter("\"IataCode\" IS NOT NULL");
             entity.HasOne(a => a.Country).WithMany().HasForeignKey(a => a.CountryId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<SoftwareDeveloper>(entity =>
+        {
+            entity.Property(s => s.Name).IsRequired().HasMaxLength(200);
+            entity.HasIndex(s => s.Name).IsUnique();
+        });
+
+        builder.Entity<Aircraft>(entity =>
+        {
+            entity.Property(a => a.RegistrationNumber).IsRequired().HasMaxLength(20);
+            entity.HasIndex(a => a.RegistrationNumber).IsUnique();
+            entity.HasOne(a => a.AircraftModel).WithMany().HasForeignKey(a => a.AircraftModelId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.SoftwareDeveloper).WithMany().HasForeignKey(a => a.SoftwareDeveloperId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
