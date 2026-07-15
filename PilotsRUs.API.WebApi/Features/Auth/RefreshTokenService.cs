@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
@@ -118,32 +119,18 @@ public sealed class RefreshTokenService(
     public async Task RevokeAllForUserAsync(Guid userId, string reason, CancellationToken ct = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-
-        // Load + mutate + SaveChanges rather than ExecuteUpdateAsync, since the latter isn't supported by
-        // EF Core's InMemory provider (used in tests) - a user only ever has a handful of active tokens, so
-        // this is not a meaningful cost against Postgres either.
-        var activeTokens = await db.RefreshTokens
-            .Where(t => t.UserId == userId && t.RevokedAtUtc == null)
-            .ToListAsync(ct);
-
-        var revokedAtUtc = DateTimeOffset.UtcNow;
-        foreach (var token in activeTokens)
-        {
-            token.RevokedAtUtc = revokedAtUtc;
-            token.RevokedReason = reason;
-        }
-
-        await db.SaveChangesAsync(ct);
+        await RevokeMatchingAsync(db, t => t.UserId == userId && t.RevokedAtUtc == null, reason, ct);
     }
 
-    private static async Task RevokeFamilyAsync(ApplicationDbContext db, Guid familyId, string reason, CancellationToken ct)
+    private static Task RevokeFamilyAsync(ApplicationDbContext db, Guid familyId, string reason, CancellationToken ct) =>
+        RevokeMatchingAsync(db, t => t.FamilyId == familyId && t.RevokedAtUtc == null, reason, ct);
+
+    private static async Task RevokeMatchingAsync(ApplicationDbContext db, Expression<Func<RefreshToken, bool>> predicate, string reason, CancellationToken ct)
     {
         // Load + mutate + SaveChanges rather than ExecuteUpdateAsync, since the latter isn't supported by
-        // EF Core's InMemory provider (used in tests) - a lineage only ever has a handful of rows, so this
-        // is not a meaningful cost against Postgres either.
-        var activeTokens = await db.RefreshTokens
-            .Where(t => t.FamilyId == familyId && t.RevokedAtUtc == null)
-            .ToListAsync(ct);
+        // EF Core's InMemory provider (used in tests) - a lineage/user only ever has a handful of active
+        // tokens, so this is not a meaningful cost against Postgres either.
+        var activeTokens = await db.RefreshTokens.Where(predicate).ToListAsync(ct);
 
         var revokedAtUtc = DateTimeOffset.UtcNow;
         foreach (var token in activeTokens)

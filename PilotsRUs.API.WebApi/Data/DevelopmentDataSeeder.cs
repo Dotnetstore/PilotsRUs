@@ -21,7 +21,11 @@ public static class DevelopmentDataSeeder
         {
             if (!await userManager.IsInRoleAsync(existing, AuthConstants.AdminRoleName))
             {
-                await userManager.AddToRoleAsync(existing, AuthConstants.AdminRoleName);
+                var existingUserRoleResult = await userManager.AddToRoleAsync(existing, AuthConstants.AdminRoleName);
+                if (!existingUserRoleResult.Succeeded)
+                {
+                    throw new InvalidOperationException(string.Join(", ", existingUserRoleResult.Errors.Select(e => e.Description)));
+                }
             }
             return;
         }

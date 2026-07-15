@@ -48,9 +48,15 @@ public static class AircraftModelSeeder
         var existingPairs = await dbContext.AircraftModels
             .Select(a => new { a.ManufacturerId, a.Name })
             .ToListAsync();
-        var existingSet = existingPairs
+        var existingPairSet = existingPairs
             .Select(p => (p.ManufacturerId, p.Name))
             .ToHashSet();
+
+        var existingIcaoCodes = (await dbContext.AircraftModels
+                .Where(a => a.IcaoTypeDesignator != null)
+                .Select(a => a.IcaoTypeDesignator!)
+                .ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var missing = new List<AircraftModel>();
         foreach (var (manufacturerName, models) in SeedModelsByManufacturer)
@@ -62,7 +68,17 @@ public static class AircraftModelSeeder
 
             foreach (var (name, icao) in models)
             {
-                if (existingSet.Contains((manufacturerId, name)))
+                // Checks against both already-committed rows AND entries already queued earlier in this
+                // same pass - guards against an accidental duplicate (ManufacturerId, Name) pair or ICAO
+                // type designator within SeedModelsByManufacturer causing an unhandled unique-index
+                // violation when AddRange + SaveChangesAsync runs, which would otherwise crash startup.
+                // Same pattern as AirportSeeder.
+                if (!existingPairSet.Add((manufacturerId, name)))
+                {
+                    continue;
+                }
+
+                if (icao is not null && !existingIcaoCodes.Add(icao))
                 {
                     continue;
                 }

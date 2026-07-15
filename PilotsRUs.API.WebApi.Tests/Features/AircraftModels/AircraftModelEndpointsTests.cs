@@ -13,7 +13,9 @@ public sealed class AircraftModelEndpointsTests(ApiFactory factory) : IClassFixt
     {
         var (client, _) = await factory.CreateAuthenticatedClientAsync("models-list@pilotsrus.test", "P@ssw0rd123!");
         var manufacturer = await CreateManufacturerAsync(client, "Textron Aviation");
-        await client.PostAsJsonAsync("/aircraft-models", new CreateAircraftModelRequest("208 Caravan", "C208", manufacturer.Id));
+        // "ZZT"-prefixed ICAO code - avoids colliding with AircraftModelSeeder's real seeded designators
+        // (e.g. Cessna's real 208 Caravan already uses "C208"), same convention AirportEndpointsTests uses.
+        await client.PostAsJsonAsync("/aircraft-models", new CreateAircraftModelRequest("208 Caravan", "ZZT1", manufacturer.Id));
 
         var response = await client.GetAsync("/aircraft-models");
 

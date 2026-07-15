@@ -17,10 +17,21 @@ public static class UserEndpoints
         {
             // No pagination this pass - small expected user count (internal admin tool, not a public
             // directory). Hook Skip/Take + page query params into userManager.Users here if it grows.
+            var users = userManager.Users.OrderBy(u => u.Email).ToList();
+
+            // Batch admin-role lookup (one query for the whole list) instead of calling IsInRoleAsync per
+            // user via ToResponseAsync - that was an N+1 query pattern. IsLockedOutAsync stays per-user
+            // since it only reads LockoutEnabled/LockoutEnd off the already-loaded entity, no extra
+            // DB round trip.
+            var adminUserIds = (await userManager.GetUsersInRoleAsync(AuthConstants.AdminRoleName))
+                .Select(u => u.Id)
+                .ToHashSet();
+
             var responses = new List<UserResponse>();
-            foreach (var user in userManager.Users.OrderBy(u => u.Email).ToList())
+            foreach (var user in users)
             {
-                responses.Add(await ToResponseAsync(userManager, user));
+                var isLockedOut = await userManager.IsLockedOutAsync(user);
+                responses.Add(new UserResponse(user.Id, user.Email ?? string.Empty, user.FirstName, user.LastName, adminUserIds.Contains(user.Id), isLockedOut));
             }
             return Results.Ok(responses);
         }).WithName("GetUsers");

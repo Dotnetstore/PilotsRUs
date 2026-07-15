@@ -133,17 +133,25 @@ public static class CountryEndpoints
 
     private static async Task<string?> FindConflictAsync(ApplicationDbContext dbContext, string name, string alpha2, string alpha3, Guid? excludingId)
     {
-        if (await dbContext.Countries.AnyAsync(c => c.Id != excludingId && c.Name == name))
+        // Single round-trip for all three uniqueness rules - each column has its own unique index, so at
+        // most a couple of rows can ever come back here, and the in-memory checks below preserve the
+        // documented Name -> Alpha2 -> Alpha3 "first match wins" precedence.
+        var conflicts = await dbContext.Countries
+            .Where(c => c.Id != excludingId && (c.Name == name || c.IsoAlpha2Code == alpha2 || c.IsoAlpha3Code == alpha3))
+            .Select(c => new { c.Name, c.IsoAlpha2Code, c.IsoAlpha3Code })
+            .ToListAsync();
+
+        if (conflicts.Any(c => c.Name == name))
         {
             return $"A country named '{name}' already exists.";
         }
 
-        if (await dbContext.Countries.AnyAsync(c => c.Id != excludingId && c.IsoAlpha2Code == alpha2))
+        if (conflicts.Any(c => c.IsoAlpha2Code == alpha2))
         {
             return $"ISO alpha-2 code '{alpha2}' is already in use.";
         }
 
-        if (await dbContext.Countries.AnyAsync(c => c.Id != excludingId && c.IsoAlpha3Code == alpha3))
+        if (conflicts.Any(c => c.IsoAlpha3Code == alpha3))
         {
             return $"ISO alpha-3 code '{alpha3}' is already in use.";
         }

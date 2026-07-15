@@ -37,7 +37,7 @@
                                 <p>Home</p>
                             </a>
                         </li>
-                        @if (User.IsInRole("Admin"))
+                        @if (User.IsInRole(AuthConstants.AdminRoleName))
                         {
                             <li class="nav-item">
                                 <a asp-area="" asp-page="/Users/Index" class="nav-link">

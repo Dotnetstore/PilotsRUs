@@ -41,12 +41,15 @@ public static class AircraftModelEndpoints
                 return Results.BadRequest("The selected manufacturer does not exist.");
             }
 
-            if (await dbContext.AircraftModels.AnyAsync(a => a.ManufacturerId == request.ManufacturerId && a.Name == request.Name))
+            var icao = string.IsNullOrWhiteSpace(request.IcaoTypeDesignator) ? null : request.IcaoTypeDesignator.ToUpperInvariant();
+
+            var conflict = await FindConflictAsync(dbContext, manufacturer.Name, request.ManufacturerId, request.Name, icao, excludingId: null);
+            if (conflict is not null)
             {
-                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}'.");
+                return Results.Conflict(conflict);
             }
 
-            var model = new AircraftModel { Id = Guid.NewGuid(), ManufacturerId = request.ManufacturerId, Name = request.Name, IcaoTypeDesignator = request.IcaoTypeDesignator };
+            var model = new AircraftModel { Id = Guid.NewGuid(), ManufacturerId = request.ManufacturerId, Name = request.Name, IcaoTypeDesignator = icao };
             dbContext.AircraftModels.Add(model);
 
             try
@@ -55,8 +58,8 @@ public static class AircraftModelEndpoints
             }
             catch (DbUpdateException)
             {
-                // Closes the TOCTOU gap between the AnyAsync check above and this insert.
-                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}'.");
+                // Closes the TOCTOU gap between the checks above and this insert.
+                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}', or its ICAO type designator is already in use.");
             }
 
             var response = new AircraftModelResponse(model.Id, model.Name, model.IcaoTypeDesignator, model.ManufacturerId, manufacturer.Name);
@@ -79,13 +82,16 @@ public static class AircraftModelEndpoints
                 return Results.BadRequest("The selected manufacturer does not exist.");
             }
 
-            if (await dbContext.AircraftModels.AnyAsync(a => a.Id != id && a.ManufacturerId == request.ManufacturerId && a.Name == request.Name))
+            var icao = string.IsNullOrWhiteSpace(request.IcaoTypeDesignator) ? null : request.IcaoTypeDesignator.ToUpperInvariant();
+
+            var conflict = await FindConflictAsync(dbContext, manufacturer.Name, request.ManufacturerId, request.Name, icao, excludingId: id);
+            if (conflict is not null)
             {
-                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}'.");
+                return Results.Conflict(conflict);
             }
 
             model.Name = request.Name;
-            model.IcaoTypeDesignator = request.IcaoTypeDesignator;
+            model.IcaoTypeDesignator = icao;
             model.ManufacturerId = request.ManufacturerId;
 
             try
@@ -94,7 +100,7 @@ public static class AircraftModelEndpoints
             }
             catch (DbUpdateException)
             {
-                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}'.");
+                return Results.Conflict($"'{manufacturer.Name}' already has a model named '{request.Name}', or its ICAO type designator is already in use.");
             }
 
             return Results.Ok(new AircraftModelResponse(model.Id, model.Name, model.IcaoTypeDesignator, model.ManufacturerId, manufacturer.Name));
@@ -120,5 +126,20 @@ public static class AircraftModelEndpoints
         }).WithName("DeleteAircraftModel");
 
         return app;
+    }
+
+    private static async Task<string?> FindConflictAsync(ApplicationDbContext dbContext, string manufacturerName, Guid manufacturerId, string name, string? icao, Guid? excludingId)
+    {
+        if (await dbContext.AircraftModels.AnyAsync(a => a.Id != excludingId && a.ManufacturerId == manufacturerId && a.Name == name))
+        {
+            return $"'{manufacturerName}' already has a model named '{name}'.";
+        }
+
+        if (icao is not null && await dbContext.AircraftModels.AnyAsync(a => a.Id != excludingId && a.IcaoTypeDesignator == icao))
+        {
+            return $"ICAO type designator '{icao}' is already in use by another aircraft model.";
+        }
+
+        return null;
     }
 }

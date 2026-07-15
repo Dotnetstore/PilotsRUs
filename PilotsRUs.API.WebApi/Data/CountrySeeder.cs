@@ -9,7 +9,9 @@ namespace PilotsRUs.API.WebApi.Data;
 /// </summary>
 public static class CountrySeeder
 {
-    // Full ISO 3166-1 country list (~249 entries: Name, IsoAlpha2Code, IsoAlpha3Code).
+    // The commonly-understood "countries of the world" list (195 sovereign states: Name, IsoAlpha2Code,
+    // IsoAlpha3Code) - not the full ~249-entry ISO 3166-1 registry, which also includes dependent
+    // territories (Puerto Rico, Hong Kong, etc.).
     private static readonly (string Name, string Alpha2, string Alpha3)[] SeedCountries =
     [
         ("Afghanistan", "AF", "AFG"), ("Albania", "AL", "ALB"), ("Algeria", "DZ", "DZA"), ("Andorra", "AD", "AND"),
@@ -72,13 +74,37 @@ public static class CountrySeeder
 
         await using var dbContext = await dbContextFactory.CreateDbContextAsync();
 
-        var existingCodes = (await dbContext.Countries.Select(c => c.IsoAlpha2Code).ToListAsync())
+        var existingNames = (await dbContext.Countries.Select(c => c.Name).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingAlpha2Codes = (await dbContext.Countries.Select(c => c.IsoAlpha2Code).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingAlpha3Codes = (await dbContext.Countries.Select(c => c.IsoAlpha3Code).ToListAsync())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var missing = SeedCountries
-            .Where(c => !existingCodes.Contains(c.Alpha2))
-            .Select(c => new Country { Id = Guid.NewGuid(), Name = c.Name, IsoAlpha2Code = c.Alpha2, IsoAlpha3Code = c.Alpha3 })
-            .ToList();
+        var missing = new List<Country>();
+        foreach (var (name, alpha2, alpha3) in SeedCountries)
+        {
+            // Checks against both already-committed rows AND entries already queued earlier in this same
+            // pass - guards against an accidental duplicate Name/Alpha2/Alpha3 within SeedCountries itself
+            // causing an unhandled unique-index violation when AddRange + SaveChangesAsync runs, which
+            // would otherwise crash startup. Same pattern as AirportSeeder.
+            if (!existingNames.Add(name))
+            {
+                continue;
+            }
+
+            if (!existingAlpha2Codes.Add(alpha2))
+            {
+                continue;
+            }
+
+            if (!existingAlpha3Codes.Add(alpha3))
+            {
+                continue;
+            }
+
+            missing.Add(new Country { Id = Guid.NewGuid(), Name = name, IsoAlpha2Code = alpha2, IsoAlpha3Code = alpha3 });
+        }
 
         if (missing.Count == 0)
         {
