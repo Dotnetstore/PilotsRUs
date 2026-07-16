@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PilotsRUs.User.App.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="400"
+             x:Class="PilotsRUs.User.App.Views.FlightAssignmentResultView"
+             x:DataType="vm:FlightAssignmentResultViewModel">
+
+    <StackPanel Spacing="8" Margin="24" VerticalAlignment="Center" HorizontalAlignment="Center" Width="350">
+        <TextBlock Text="Flight assigned!" FontSize="20" FontWeight="Bold" Margin="0,0,0,12" />
+
+        <TextBlock FontWeight="Bold">
+            <Run Text="{Binding FlightNumber}" /><Run Text=" - " /><Run Text="{Binding DepartureAirportIcaoCode}" /><Run Text=" to " /><Run Text="{Binding ArrivalAirportIcaoCode}" />
+        </TextBlock>
+        <TextBlock Text="{Binding FlightDate, StringFormat='Flight date: {0}'}" />
+        <TextBlock Text="{Binding AircraftRegistrationNumber, StringFormat='Aircraft: {0}'}" />
+
+        <TextBlock Text="Passengers" FontWeight="Bold" Margin="0,12,0,0" />
+        <TextBlock Text="{Binding AssignedPassengersEconomy, StringFormat='Economy: {0}'}" />
+        <TextBlock Text="{Binding AssignedPassengersBusiness, StringFormat='Business: {0}'}" />
+        <TextBlock Text="{Binding AssignedPassengersFirst, StringFormat='First: {0}'}" />
+
+        <TextBlock Text="{Binding AssignedCargoKg, StringFormat='Cargo: {0} kg'}" FontWeight="Bold" Margin="0,12,0,0" />
+
+        <Button Content="Search again" Command="{Binding SearchAgainCommand}" HorizontalAlignment="Stretch" Margin="0,16,0,0" />
+        <Button Content="Back to menu" Command="{Binding BackToShellCommand}" HorizontalAlignment="Stretch" />
+    </StackPanel>
+</UserControl>

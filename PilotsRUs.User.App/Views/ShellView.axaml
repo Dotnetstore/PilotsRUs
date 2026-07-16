@@ -9,6 +9,8 @@
 
     <StackPanel Spacing="12" Margin="24" VerticalAlignment="Center" HorizontalAlignment="Center">
         <TextBlock Text="{Binding DisplayName, StringFormat='Welcome, {0}!'}" FontSize="20" FontWeight="Bold" />
-        <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Center" />
+        <Button Content="Search flights" Command="{Binding SearchFlightsCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Stretch" />
+        <Button Content="My flights" Command="{Binding MyFlightsCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Stretch" />
+        <Button Content="Log out" Command="{Binding LogoutCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Stretch" />
     </StackPanel>
 </UserControl>

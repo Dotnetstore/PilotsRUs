@@ -491,9 +491,22 @@ inverse collection navigation), required `FlightDate` (`DateOnly`). A composite 
 `(ScheduleTemplateId, FlightDate)` backs this defensively, though `ScheduleGenerator`'s watermark logic
 should make it practically unreachable — see below. **Entirely system-generated**: there is no
 Create/Update/Delete endpoint or Admin.App form for `Schedule` at all, only a read-only API
-(`Features/Schedules/ScheduleEndpoints.cs`, `GET /schedules`/`GET /schedules/{id}`, `.RequireAuthorization()`
-no policy) and a browse-only `Pages/Schedules/Index.cshtml(.cs)` in Admin.App
+(`Features/Schedules/ScheduleEndpoints.cs`, `GET /schedules`/`GET /schedules/{id}`,
+`.RequireAuthorization("AccountOrAdmin")` — see "Accounts" below for what this policy is and why it's
+needed here specifically) and a browse-only `Pages/Schedules/Index.cshtml(.cs)` in Admin.App
 (`AuthorizeFolder("/Schedules")` no policy, nav link in the same shared authenticated-user `@if` block).
+
+- **`GET /schedules` supports optional search/filter query parameters** — `departureIcao`, `arrivalIcao`,
+  `minDistanceNauticalMiles`, `maxDistanceNauticalMiles`, `minFlightTimeMinutes`, `maxFlightTimeMinutes` —
+  the first `GET` endpoint in the codebase with query-string filtering. Bound directly as nullable minimal-API
+  method parameters (no wrapper DTO); each supplied filter conditionally chains another `.Where(...)` onto the
+  `IQueryable<Schedule>` before materializing, rather than fetching everything and filtering client-side —
+  `Schedule` rows accumulate weekly via `ScheduleGenerator`, so an unbounded full-table fetch is the wrong
+  default as the table grows. ICAO parameters are `.ToUpperInvariant()`-normalized before comparison, same as
+  every other ICAO-code comparison in this codebase. Flight time is expressed in **minutes** (not hours or a
+  `TimeSpan` string) as the simplest unambiguous query-string representation, converted to `TimeSpan`
+  server-side for the comparison against `ScheduleTemplate.FlightTime`. Added for `User.App`'s flight search
+  screen (see "Flight Assignments" below) but usable by any caller.
 
 - **First `IHostedService`/`BackgroundService` in the solution** — `Features/Schedules/
   ScheduleGenerationBackgroundService.cs`, registered via `builder.Services.AddHostedService<...>()` in
@@ -543,11 +556,16 @@ no policy) and a browse-only `Pages/Schedules/Index.cshtml(.cs)` in Admin.App
     ..., `Weekly`=7) — lives there rather than private to the generator since it's a property of the enum's
     meaning, reusable anywhere `ScheduleFrequency` is used.
 - **Response flattening**: `ScheduleResponse` flattens `FlightNumber`, `DepartureAirportIcaoCode`/`Name`,
-  `ArrivalAirportIcaoCode`/`Name`, and `AircraftRegistrationNumber` from the related `ScheduleTemplate` (via
-  `.Include(s => s.ScheduleTemplate).ThenInclude(...)` chains) — same flattening pattern as
-  `AircraftResponse`/`ScheduleTemplateResponse`. The list endpoint materializes via `.ToListAsync()` first,
-  then maps to `ScheduleResponse` in-memory, since the flattening helper isn't SQL-translatable inside an EF
-  `.Select()` (same reason `AircraftEndpoints.cs`'s list endpoint does this).
+  `ArrivalAirportIcaoCode`/`Name`, `AircraftId`/`RegistrationNumber`, `DistanceNauticalMiles`, `FlightTime`,
+  and the four `Aircraft` passenger/cargo capacity fields
+  (`PassengerCapacityEconomy`/`Business`/`First`/`CargoCapacityKg`) from the related `ScheduleTemplate`/
+  `Aircraft` (via `.Include(s => s.ScheduleTemplate).ThenInclude(...)` chains) — same flattening pattern as
+  `AircraftResponse`/`ScheduleTemplateResponse`. The capacity/distance/time fields were added alongside the
+  search filters above, purely so `User.App` has everything it needs to generate a random passenger/cargo
+  assignment locally once a flight is selected, without a second API round-trip (see "Flight Assignments"
+  below). The list endpoint materializes via `.ToListAsync()` first, then maps to `ScheduleResponse`
+  in-memory, since the flattening helper isn't SQL-translatable inside an EF `.Select()` (same reason
+  `AircraftEndpoints.cs`'s list endpoint does this).
 - **No seed data** — same reasoning as `SoftwareDeveloper`/`Aircraft`/`ScheduleTemplate`: entirely
   system-generated from whatever `ScheduleTemplate`s exist.
 - **Test-data safety**: `ScheduleGeneratorTests`/`ScheduleEndpointsTests` share a `ScheduleTestData` helper
@@ -581,6 +599,15 @@ No cross-check against `ApplicationUser.Email` — Accounts and Admin users are 
   `AccountEndpointsTests.AccountToken_CannotAccessAdminScopedEndpoint` is the regression guard proving this
   actually works (calls `GET /manufacturers` with an Account token, asserts it's rejected) — if this test
   ever starts failing, the audience scoping has broken.
+  - A third policy, **`"AccountOrAdmin"`**, exists for the opposite case — an endpoint both `Admin.App`
+    (default-scheme, Admin-audience tokens) and `User.App` (`"AccountBearer"`-scheme, Account-audience
+    tokens) both need to call. `.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme,
+    "AccountBearer").RequireAuthenticatedUser()` — ASP.NET Core authorizes against a multi-scheme policy if
+    *any* listed scheme validates the presented token, so this is purely additive: it doesn't loosen what
+    either scheme accepts on its own. `GET /schedules`/`GET /schedules/{id}` is the first (and so far only)
+    endpoint using it (see "Schedules" above); `ScheduleEndpointsTests.AccountToken_CanAccessSchedules` is
+    the positive-direction complement to `AccountToken_CannotAccessAdminScopedEndpoint`. Reuse this policy
+    for any future endpoint both apps need to share, rather than inventing a fourth.
 - **`IJwtTokenService.CreateToken` is generalized** away from `ApplicationUser`-specific parameters to
   `(Guid subjectId, string email, string audience, IEnumerable<Claim> additionalClaims, IEnumerable<string>
   roles)`, since both Admin and Account logins need identical signing mechanics (key/issuer/expiry) and only
@@ -626,7 +653,8 @@ every future `User.App` feature.
 
 - **DI host**: `Program.cs`'s `Main` builds a `Host.CreateApplicationBuilder(args)` (registering
   `IHttpClientFactory`, `IDbContextFactory<UserAppDbContext>`, `IAuthSessionService`, `IAccountApiClient`,
-  `BearerTokenHandler`, and every ViewModel) **before** calling
+  `IScheduleApiClient`, `IFlightAssignmentService`, `BearerTokenHandler`, and every ViewModel) **before**
+  calling
   `BuildAvaloniaApp().StartWithClassicDesktopLifetime(args)`. Avalonia constructs `App` itself with no
   constructor-injection hook, so the built `IServiceProvider` is stashed on a static `App.Services`
   property that `OnFrameworkInitializationCompleted` reads to resolve `MainWindowViewModel`. `appsettings.json`
@@ -640,11 +668,11 @@ every future `User.App` feature.
   at startup (`dbContext.Database.Migrate()` — no `IsDevelopment()` gate, a desktop app has no such
   distinction). `Data/DesignTimeDbContextFactory.cs` mirrors `API.WebApi`'s, needed for
   `dotnet ef migrations add --project PilotsRUs.User.App` tooling support.
-  - **Starts with zero entities.** Nothing auth-related is persisted locally — the access/refresh token
-    pair lives only in `IAuthSessionService` (in-memory singleton), and User.App always shows the login
-    screen on launch (no "remember me"/session restore). The `InitialCreate` migration is intentionally
-    near-empty. The first real synced entity arrives whenever a future `User.App` feature actually needs
-    cached data (e.g. browsing cached `Schedule`s) — don't invent one before then.
+  - **Started with zero entities** (`InitialCreate` migration is near-empty) — nothing auth-related is
+    persisted locally, the access/refresh token pair lives only in `IAuthSessionService` (in-memory
+    singleton), and User.App always shows the login screen on launch (no "remember me"/session restore).
+    `FlightAssignment` (`AddFlightAssignments` migration) is the first real entity — see "Flight
+    Assignments" below.
 - **`BearerTokenHandler`** (`Infrastructure/BearerTokenHandler.cs`) mirrors `Admin.App`'s handler of the
   same name, but simpler: no `HttpContext`/cookie involved, just reads/writes `IAuthSessionService`
   directly, and uses a single `static readonly SemaphoreSlim` for the 401→refresh→retry serialization
@@ -662,12 +690,76 @@ every future `User.App` feature.
   `Application.DataTemplates`, string-replaces `ViewModel`→`View` in the type's full name — already worked
   for any future `XViewModel`/`XView` pair with zero changes). This is deliberately not a generic navigation
   service, since navigation only happens in this one place so far.
-- **Testing ViewModels without HTTP mocking**: `LoginViewModel`/`RegisterViewModel`/`ShellViewModel` all
-  depend on `IAccountApiClient` (an interface), not `HttpClient` directly, so
-  `PilotsRUs.User.App.Tests/ViewModels/*Tests.cs` use a hand-rolled `FakeAccountApiClient`
-  (`Services/FakeAccountApiClient.cs`) instead of mocking `HttpMessageHandler`. `IAuthSessionService` isn't
-  faked at all — its real `AuthSessionService` implementation is trivial in-memory state, so tests just
-  instantiate it directly and assert against its real behavior.
+- **Testing ViewModels without HTTP mocking**: `LoginViewModel`/`RegisterViewModel`/`ShellViewModel`/
+  `FlightSearchViewModel`/`MyFlightsViewModel` all depend on interfaces (`IAccountApiClient`/
+  `IScheduleApiClient`/`IFlightAssignmentService`), not `HttpClient`/`DbContext` directly, so
+  `PilotsRUs.User.App.Tests/ViewModels/*Tests.cs` use hand-rolled fakes (`Services/FakeAccountApiClient.cs`,
+  `FakeScheduleApiClient.cs`, `FakeFlightAssignmentService.cs`) instead of mocking `HttpMessageHandler`.
+  `IAuthSessionService` isn't faked at all — its real `AuthSessionService` implementation is trivial
+  in-memory state, so tests just instantiate it directly and assert against its real behavior.
+  `FlightAssignmentServiceTests` (the one test class that legitimately needs to exercise a real `DbContext`,
+  since it's testing `FlightAssignmentService` itself, not something that depends on it) uses EF Core's
+  `Microsoft.EntityFrameworkCore.InMemory` provider via a `PooledDbContextFactory<UserAppDbContext>` — the
+  same InMemory-for-tests approach `ApiFactory` already uses on the API side.
+
+## Flight Assignments
+
+`User.App`'s first real feature past the Shell screen: search generated `Schedule` rows, pick one, and get
+randomly assigned passenger/cargo numbers for it, stored locally. `Data/FlightAssignment.cs` is
+`UserAppDbContext`'s first real entity (see "User.App architecture" above) — deliberately denormalized, not
+FK'd to anything, since the local SQLite database and the API's Postgres database are entirely separate;
+`ScheduleId` is kept only for reference/traceability, and every field the "My Flights" list needs to render
+is copied in directly so reading it back never needs an API round-trip.
+
+- **Random generation is a separately-testable pure function**, mirroring `ScheduleGenerator`'s pure-logic/
+  wrapping-I/O-service split on the API side: `Services/FlightAssignmentGenerator.cs` is a static class,
+  `Generate(economyCapacity, businessCapacity, firstCapacity, cargoCapacityKg, Random? random = null)`.
+  Each of Economy/Business/First/Cargo is independently randomized to **40-100% of that value's capacity** —
+  a deliberate "realistic load factor" choice over a flat 0-100% range, which could produce an empty flight.
+  A capacity of 0 always yields 0. The optional `Random` parameter lets tests pass a seeded instance for
+  deterministic bounds-checking. `Services/IFlightAssignmentService.cs`/`FlightAssignmentService.cs` wraps
+  it with the actual SQLite write (`AssignAsync`, called when a search result is selected) and the read-back
+  `GetAllAsync` (newest-first) that "My Flights" uses.
+- **`ApiResult<T>` was generalized from `IAccountApiClient`'s private `AccountApiResult<T>`**
+  (`Services/ApiResult.cs`) once `IScheduleApiClient` needed the exact same success/value-or-failure/message
+  shape. This is a pure data-shape wrapper with zero business logic in it, so — unlike
+  `AccountRefreshTokenService`'s *deliberate* duplication of `RefreshTokenService` (see "Accounts" above,
+  judged too risky to make polymorphic) — sharing this one carries none of that risk. `IAccountApiClient`'s
+  behavior is unchanged, it just returns the renamed type now.
+- **`Services/IScheduleApiClient.cs`/`ScheduleApiClient.cs`** wraps `GET /schedules` with the new search
+  query parameters (see "Schedules" above), building the query string by hand
+  (`Uri.EscapeDataString`) rather than pulling in `Microsoft.AspNetCore.WebUtilities.QueryHelpers` — that
+  package belongs to the ASP.NET Core-web SDK, which this plain desktop-app project doesn't reference, and
+  isn't worth adding for one helper. `FlightSearchCriteria` is the request shape, every field nullable since
+  every filter is optional.
+- **Three new screens, extending `MainWindowViewModel`'s existing no-router navigation pattern**:
+  `FlightSearchViewModel`/`View` (filters + results, a "Select" button per row calling
+  `IFlightAssignmentService.AssignAsync` then navigating away), `FlightAssignmentResultViewModel`/`View` (a
+  **separate confirmation screen**, not an inline panel on the search results — a deliberate choice over the
+  alternative), `MyFlightsViewModel`/`View` (read-only list of previously-made assignments).
+  `ShellViewModel` gained two more buttons/callbacks ("Search Flights"/"My Flights") alongside the existing
+  Logout, wired the same way `onLoggedOut` already was. `MainWindowViewModel`'s constructor gained
+  `IScheduleApiClient`/`IFlightAssignmentService` so its private factory methods can construct the three new
+  ViewModels.
+  - **`MyFlightsViewModel`'s data load is triggered by its factory method**, not a page-navigation lifecycle
+    event (none exists in this app's navigation model): `CreateMyFlightsViewModel()` fires the generated
+    `LoadCommand` immediately after construction (`_ = viewModel.LoadCommand.ExecuteAsync(null);`). Follow
+    this same pattern for any future screen that needs to load data as soon as it becomes current.
+  - Search filter inputs (`FlightSearchView.axaml`) are plain `TextBox`es bound to `string` properties,
+    parsed to `int?` inside `SearchAsync` (invalid/empty input → no filter for that field) — not Avalonia's
+    `NumericUpDown`, whose `Value` is `decimal?` and would need a converter to bind against `int?` for no
+    real benefit here.
+  - A per-row "Select" button inside `ItemsControl.ItemTemplate` invoking a command on the *parent*
+    ViewModel (not the templated item) is the first instance of this pattern in `User.App` — with
+    `AvaloniaUseCompiledBindingsByDefault` on, it needs
+    `Command="{Binding $parent[ItemsControl].((vm:FlightSearchViewModel)DataContext).SelectFlightCommand}"
+    CommandParameter="{Binding}"` (see `FlightSearchView.axaml`) rather than a plain `{Binding
+    SelectFlightCommand}`, which would resolve against the templated `ScheduleResponse` item's own
+    (nonexistent) `DataContext` instead. Reuse this exact binding shape for any future per-row action button.
+- **Known follow-ups, not built yet**: `FlightAssignment` rows aren't scoped per-`Account` — since there's
+  no local Account caching at all (see "Started with zero entities" above), two different players sharing
+  one machine/local database would see each other's rows in "My Flights"; revisit if local Account caching
+  is ever added. No delete/cancel action on a `FlightAssignment` from "My Flights" yet — read-only for now.
 
 ## Architecture principles
 

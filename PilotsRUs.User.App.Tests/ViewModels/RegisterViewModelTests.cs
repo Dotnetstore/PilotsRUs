@@ -30,7 +30,7 @@ public sealed class RegisterViewModelTests
     {
         var apiClient = new FakeAccountApiClient
         {
-            RegisterResult = AccountApiResult<AccountResponse>.Ok(new AccountResponse(Guid.NewGuid(), "test@pilotsrus.test", "Test"))
+            RegisterResult = ApiResult<AccountResponse>.Ok(new AccountResponse(Guid.NewGuid(), "test@pilotsrus.test", "Test"))
         };
         var navigatedToLogin = false;
         var vm = new RegisterViewModel(apiClient, onRegisterSucceeded: () => navigatedToLogin = true, onGoToLogin: () => { })
@@ -50,7 +50,7 @@ public sealed class RegisterViewModelTests
     [Fact]
     public async Task RegisterAsync_WhenApiFails_SetsErrorMessage()
     {
-        var apiClient = new FakeAccountApiClient { RegisterResult = AccountApiResult<AccountResponse>.Fail("An account with this email already exists.") };
+        var apiClient = new FakeAccountApiClient { RegisterResult = ApiResult<AccountResponse>.Fail("An account with this email already exists.") };
         var vm = new RegisterViewModel(apiClient, onRegisterSucceeded: () => { }, onGoToLogin: () => { })
         {
             Email = "test@pilotsrus.test",

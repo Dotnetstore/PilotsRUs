@@ -5,24 +5,18 @@ using PilotsRUs.Shared.SDK.Auth;
 
 namespace PilotsRUs.User.App.Services;
 
-public sealed record AccountApiResult<T>(bool Success, T? Value, string? ErrorMessage)
-{
-    public static AccountApiResult<T> Ok(T value) => new(true, value, null);
-    public static AccountApiResult<T> Fail(string errorMessage) => new(false, default, errorMessage);
-}
-
 // Wraps HTTP calls to /account/* and returns simple success/failure results rather than throwing, so
 // ViewModels can consume this without try/catch around every call.
 public interface IAccountApiClient
 {
-    Task<AccountApiResult<AccountResponse>> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default);
-    Task<AccountApiResult<AccountLoginResponse>> LoginAsync(string email, string password, CancellationToken ct = default);
+    Task<ApiResult<AccountResponse>> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default);
+    Task<ApiResult<AccountLoginResponse>> LoginAsync(string email, string password, CancellationToken ct = default);
     Task LogoutAsync(string refreshToken, CancellationToken ct = default);
 }
 
 public sealed class AccountApiClient(IHttpClientFactory httpClientFactory) : IAccountApiClient
 {
-    public async Task<AccountApiResult<AccountResponse>> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default)
+    public async Task<ApiResult<AccountResponse>> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default)
     {
         var client = httpClientFactory.CreateClient("Api");
         var response = await client.PostAsJsonAsync("/account/register", new RegisterAccountRequest(email, password, displayName), ct);
@@ -30,13 +24,13 @@ public sealed class AccountApiClient(IHttpClientFactory httpClientFactory) : IAc
         if (response.IsSuccessStatusCode)
         {
             var account = await response.Content.ReadFromJsonAsync<AccountResponse>(cancellationToken: ct);
-            return AccountApiResult<AccountResponse>.Ok(account!);
+            return ApiResult<AccountResponse>.Ok(account!);
         }
 
-        return AccountApiResult<AccountResponse>.Fail(await ReadErrorMessageAsync(response, ct));
+        return ApiResult<AccountResponse>.Fail(await ReadErrorMessageAsync(response, ct));
     }
 
-    public async Task<AccountApiResult<AccountLoginResponse>> LoginAsync(string email, string password, CancellationToken ct = default)
+    public async Task<ApiResult<AccountLoginResponse>> LoginAsync(string email, string password, CancellationToken ct = default)
     {
         var client = httpClientFactory.CreateClient("Api");
         var response = await client.PostAsJsonAsync("/account/login", new AccountLoginRequest(email, password), ct);
@@ -44,10 +38,10 @@ public sealed class AccountApiClient(IHttpClientFactory httpClientFactory) : IAc
         if (response.IsSuccessStatusCode)
         {
             var login = await response.Content.ReadFromJsonAsync<AccountLoginResponse>(cancellationToken: ct);
-            return AccountApiResult<AccountLoginResponse>.Ok(login!);
+            return ApiResult<AccountLoginResponse>.Ok(login!);
         }
 
-        return AccountApiResult<AccountLoginResponse>.Fail(await ReadErrorMessageAsync(response, ct));
+        return ApiResult<AccountLoginResponse>.Fail(await ReadErrorMessageAsync(response, ct));
     }
 
     public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)

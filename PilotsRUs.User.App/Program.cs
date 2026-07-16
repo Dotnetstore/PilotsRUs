@@ -34,6 +34,8 @@ sealed class Program
 
         hostBuilder.Services.AddSingleton<IAuthSessionService, AuthSessionService>();
         hostBuilder.Services.AddTransient<IAccountApiClient, AccountApiClient>();
+        hostBuilder.Services.AddTransient<IScheduleApiClient, ScheduleApiClient>();
+        hostBuilder.Services.AddTransient<IFlightAssignmentService, FlightAssignmentService>();
         hostBuilder.Services.AddTransient<BearerTokenHandler>();
 
         hostBuilder.Services.AddHttpClient("Api", (services, client) =>

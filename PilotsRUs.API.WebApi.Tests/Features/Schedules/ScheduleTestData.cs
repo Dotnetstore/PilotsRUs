@@ -25,7 +25,8 @@ internal static class ScheduleTestData
 
     public static async Task<ScheduleTemplateResponse> CreateDailyTemplateAsync(
         HttpClient client, string qualifier, DateOnly startDate,
-        string departureIcao, string departureAlpha2, string arrivalIcao, string arrivalAlpha2)
+        string departureIcao, string departureAlpha2, string arrivalIcao, string arrivalAlpha2,
+        int distanceNauticalMiles = 500, TimeSpan? flightTime = null)
     {
         var departure = await CreateAirportAsync(client, $"{qualifier} Dep", departureIcao, departureAlpha2);
         var arrival = await CreateAirportAsync(client, $"{qualifier} Arr", arrivalIcao, arrivalAlpha2);
@@ -33,7 +34,9 @@ internal static class ScheduleTestData
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest($"SG{departureIcao[..2]}", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, startDate),
+            new CreateScheduleTemplateRequest(
+                $"SG{departureIcao[..2]}", departure.Id, arrival.Id, aircraft.Id,
+                distanceNauticalMiles, flightTime ?? TimeSpan.FromHours(1), ScheduleFrequency.Daily, startDate),
             JsonOptions);
         return (await response.Content.ReadFromJsonAsync<ScheduleTemplateResponse>(JsonOptions))!;
     }

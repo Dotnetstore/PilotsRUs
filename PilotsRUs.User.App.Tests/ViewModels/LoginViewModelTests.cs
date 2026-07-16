@@ -12,7 +12,7 @@ public sealed class LoginViewModelTests
     {
         var apiClient = new FakeAccountApiClient
         {
-            LoginResult = AccountApiResult<AccountLoginResponse>.Ok(
+            LoginResult = ApiResult<AccountLoginResponse>.Ok(
                 new AccountLoginResponse("access-token", DateTimeOffset.UtcNow.AddMinutes(60), "refresh-token", DateTimeOffset.UtcNow.AddDays(14), "Maverick"))
         };
         var authSession = new AuthSessionService();
@@ -34,7 +34,7 @@ public sealed class LoginViewModelTests
     [Fact]
     public async Task LoginAsync_WhenApiFails_SetsErrorAndDoesNotSetSession()
     {
-        var apiClient = new FakeAccountApiClient { LoginResult = AccountApiResult<AccountLoginResponse>.Fail("Invalid email or password.") };
+        var apiClient = new FakeAccountApiClient { LoginResult = ApiResult<AccountLoginResponse>.Fail("Invalid email or password.") };
         var authSession = new AuthSessionService();
         var vm = new LoginViewModel(apiClient, authSession, onLoginSucceeded: () => { }, onGoToRegister: () => { })
         {

@@ -9,4 +9,11 @@ public sealed record ScheduleResponse(
     string DepartureAirportName,
     string ArrivalAirportIcaoCode,
     string ArrivalAirportName,
-    string AircraftRegistrationNumber);
+    Guid AircraftId,
+    string AircraftRegistrationNumber,
+    int DistanceNauticalMiles,
+    TimeSpan FlightTime,
+    int PassengerCapacityEconomy,
+    int PassengerCapacityBusiness,
+    int PassengerCapacityFirst,
+    int CargoCapacityKg);

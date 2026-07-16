@@ -11,7 +11,7 @@ public sealed class ShellViewModelTests
     {
         var authSession = new AuthSessionService();
         authSession.SetSession("access-token", DateTimeOffset.UtcNow.AddMinutes(60), "refresh-token", DateTimeOffset.UtcNow.AddDays(14), "Goose");
-        var vm = new ShellViewModel(new FakeAccountApiClient(), authSession, onLoggedOut: () => { });
+        var vm = new ShellViewModel(new FakeAccountApiClient(), authSession, onLoggedOut: () => { }, onSearchFlights: () => { }, onMyFlights: () => { });
 
         Assert.Equal("Goose", vm.DisplayName);
     }
@@ -23,7 +23,7 @@ public sealed class ShellViewModelTests
         authSession.SetSession("access-token", DateTimeOffset.UtcNow.AddMinutes(60), "refresh-token", DateTimeOffset.UtcNow.AddDays(14), "Goose");
         var apiClient = new FakeAccountApiClient();
         var loggedOut = false;
-        var vm = new ShellViewModel(apiClient, authSession, onLoggedOut: () => loggedOut = true);
+        var vm = new ShellViewModel(apiClient, authSession, onLoggedOut: () => loggedOut = true, onSearchFlights: () => { }, onMyFlights: () => { });
 
         await vm.LogoutCommand.ExecuteAsync(null);
 
@@ -31,5 +31,27 @@ public sealed class ShellViewModelTests
         Assert.Equal("refresh-token", apiClient.LogoutRefreshToken);
         Assert.False(authSession.IsAuthenticated);
         Assert.True(loggedOut);
+    }
+
+    [Fact]
+    public void SearchFlights_InvokesCallback()
+    {
+        var navigated = false;
+        var vm = new ShellViewModel(new FakeAccountApiClient(), new AuthSessionService(), onLoggedOut: () => { }, onSearchFlights: () => navigated = true, onMyFlights: () => { });
+
+        vm.SearchFlightsCommand.Execute(null);
+
+        Assert.True(navigated);
+    }
+
+    [Fact]
+    public void MyFlights_InvokesCallback()
+    {
+        var navigated = false;
+        var vm = new ShellViewModel(new FakeAccountApiClient(), new AuthSessionService(), onLoggedOut: () => { }, onSearchFlights: () => { }, onMyFlights: () => navigated = true);
+
+        vm.MyFlightsCommand.Execute(null);
+
+        Assert.True(navigated);
     }
 }

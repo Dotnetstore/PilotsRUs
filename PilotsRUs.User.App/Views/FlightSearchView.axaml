@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PilotsRUs.User.App.ViewModels"
+             xmlns:schedules="using:PilotsRUs.Shared.SDK.Schedules"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+             x:Class="PilotsRUs.User.App.Views.FlightSearchView"
+             x:DataType="vm:FlightSearchViewModel">
+
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Search flights" FontSize="20" FontWeight="Bold" Margin="0,0,0,8" />
+
+            <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Departure ICAO" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="Arrival ICAO" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Min distance (nm)" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="Max distance (nm)" />
+
+                <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding DepartureIcao}" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ArrivalIcao}" />
+                <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding MinDistanceNauticalMiles}" />
+                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding MaxDistanceNauticalMiles}" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Min flight time (min)" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="Max flight time (min)" />
+
+                <TextBox Grid.Row="3" Grid.Column="0" Text="{Binding MinFlightTimeMinutes}" />
+                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MaxFlightTimeMinutes}" />
+            </Grid>
+
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="Red"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !IsBusy}" />
+                <Button Content="Back" Command="{Binding GoBackCommand}" IsEnabled="{Binding !IsBusy}" />
+            </StackPanel>
+        </StackPanel>
+
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Results}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="schedules:ScheduleResponse">
+                        <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="0,8">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="12">
+                                <TextBlock Grid.Column="0" Text="{Binding FlightNumber}" FontWeight="Bold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center">
+                                    <Run Text="{Binding DepartureAirportIcaoCode}" /><Run Text=" -> " /><Run Text="{Binding ArrivalAirportIcaoCode}" />
+                                </TextBlock>
+                                <TextBlock Grid.Column="2" Text="{Binding FlightDate}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="3" Text="{Binding DistanceNauticalMiles, StringFormat='{}{0} nm'}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="4" Text="{Binding FlightTime}" VerticalAlignment="Center" />
+                                <Button Grid.Column="5" Content="Select"
+                                        Command="{Binding $parent[ItemsControl].((vm:FlightSearchViewModel)DataContext).SelectFlightCommand}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

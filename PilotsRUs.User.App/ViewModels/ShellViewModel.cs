@@ -4,7 +4,9 @@ using PilotsRUs.User.App.Services;
 
 namespace PilotsRUs.User.App.ViewModels;
 
-public partial class ShellViewModel(IAccountApiClient accountApiClient, IAuthSessionService authSessionService, Action onLoggedOut) : ViewModelBase
+public partial class ShellViewModel(
+    IAccountApiClient accountApiClient, IAuthSessionService authSessionService,
+    Action onLoggedOut, Action onSearchFlights, Action onMyFlights) : ViewModelBase
 {
     public string DisplayName => authSessionService.DisplayName ?? string.Empty;
 
@@ -30,4 +32,10 @@ public partial class ShellViewModel(IAccountApiClient accountApiClient, IAuthSes
             onLoggedOut();
         }
     }
+
+    [RelayCommand]
+    private void SearchFlights() => onSearchFlights();
+
+    [RelayCommand]
+    private void MyFlights() => onMyFlights();
 }

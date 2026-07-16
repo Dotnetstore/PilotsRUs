@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PilotsRUs.User.App.ViewModels"
+             xmlns:data="using:PilotsRUs.User.App.Data"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+             x:Class="PilotsRUs.User.App.Views.MyFlightsView"
+             x:DataType="vm:MyFlightsViewModel">
+
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="My flights" FontSize="20" FontWeight="Bold" />
+            <Button Content="Back" Command="{Binding GoBackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Assignments}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="data:FlightAssignment">
+                        <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="0,8">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
+                                <TextBlock Grid.Column="0" Text="{Binding FlightNumber}" FontWeight="Bold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center">
+                                    <Run Text="{Binding DepartureAirportIcaoCode}" /><Run Text=" -> " /><Run Text="{Binding ArrivalAirportIcaoCode}" />
+                                </TextBlock>
+                                <TextBlock Grid.Column="2" Text="{Binding FlightDate}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="3" VerticalAlignment="Center">
+                                    <Run Text="{Binding AssignedPassengersEconomy}" /><Run Text="/" /><Run Text="{Binding AssignedPassengersBusiness}" /><Run Text="/" /><Run Text="{Binding AssignedPassengersFirst}" />
+                                </TextBlock>
+                                <TextBlock Grid.Column="4" Text="{Binding AssignedCargoKg, StringFormat='{}{0} kg'}" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

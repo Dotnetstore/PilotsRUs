@@ -152,7 +152,13 @@ public static class AuthServiceCollectionExtensions
 
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy("AdminOnly", policy => policy.RequireRole(AuthConstants.AdminRoleName))
-            .AddPolicy("Account", policy => policy.AddAuthenticationSchemes("AccountBearer").RequireAuthenticatedUser());
+            .AddPolicy("Account", policy => policy.AddAuthenticationSchemes("AccountBearer").RequireAuthenticatedUser())
+            // Accepts either scheme - for endpoints both Admin.App (default "Bearer" scheme) and User.App
+            // ("AccountBearer" scheme) need to call. Authorization succeeds if any listed scheme validates
+            // the presented token, so this is additive: it doesn't loosen what either scheme accepts on its
+            // own, it just lets an endpoint accept both audiences instead of picking one.
+            .AddPolicy("AccountOrAdmin", policy =>
+                policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, "AccountBearer").RequireAuthenticatedUser());
 
         return builder;
     }
