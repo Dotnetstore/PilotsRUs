@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using PilotsRUs.API.WebApi.Data;
+using PilotsRUs.API.WebApi.Features.Accounts;
 using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.Shared.SDK.Auth;
 
@@ -40,6 +41,11 @@ public static class AuthServiceCollectionExtensions
             .Bind(builder.Configuration.GetSection(Argon2Options.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        // IArgon2Hasher is the Identity-agnostic hashing implementation (shared with Account, which has no
+        // IPasswordHasher<TUser> of its own); Argon2PasswordHasher is just a thin adapter over it for
+        // Identity's extensibility point. Both singleton - stateless, config-bound.
+        builder.Services.AddSingleton<IArgon2Hasher, Argon2Hasher>();
 
         // AddIdentityCore registers the default PasswordHasher<TUser> via TryAddScoped; this explicit
         // (non-TryAdd) registration overrides it - same override pattern AddApplicationJwtAuth already
@@ -91,9 +97,17 @@ public static class AuthServiceCollectionExtensions
 
         // Scoped, not singleton like IJwtTokenService - this one touches the database per call.
         builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+        builder.Services.AddScoped<IAccountRefreshTokenService, AccountRefreshTokenService>();
 
+        // Two named JWT bearer schemes sharing the same signing key/issuer but validating a different
+        // audience each - "Bearer" (the default, used by every existing .RequireAuthorization() with no
+        // explicit policy) only accepts Admin-audience tokens; "AccountBearer" only accepts Account-audience
+        // tokens. This is what stops a registered player's Account token from also satisfying every
+        // existing "any authenticated user" domain-entity endpoint - the audience mismatch makes the
+        // default scheme reject it outright, with zero changes needed to those already-shipped endpoints.
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer();
+            .AddJwtBearer()
+            .AddJwtBearer("AccountBearer");
 
         // Configure JwtBearerOptions by resolving IOptions<JwtOptions> from DI rather than reading
         // builder.Configuration directly here - the latter would capture whatever configuration exists at
@@ -119,8 +133,26 @@ public static class AuthServiceCollectionExtensions
                 };
             });
 
+        builder.Services.AddOptions<JwtBearerOptions>("AccountBearer")
+            .Configure<IOptions<JwtOptions>>((jwtBearerOptions, jwtOptionsAccessor) =>
+            {
+                var jwtOptions = jwtOptionsAccessor.Value;
+                jwtBearerOptions.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = jwtOptions.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = jwtOptions.AccountAudience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key))
+                };
+            });
+
         builder.Services.AddAuthorizationBuilder()
-            .AddPolicy("AdminOnly", policy => policy.RequireRole(AuthConstants.AdminRoleName));
+            .AddPolicy("AdminOnly", policy => policy.RequireRole(AuthConstants.AdminRoleName))
+            .AddPolicy("Account", policy => policy.AddAuthenticationSchemes("AccountBearer").RequireAuthenticatedUser());
 
         return builder;
     }

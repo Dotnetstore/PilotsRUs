@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Extensions;
+using PilotsRUs.API.WebApi.Features.Accounts;
 using PilotsRUs.API.WebApi.Features.AircraftModels;
 using PilotsRUs.API.WebApi.Features.Aircrafts;
 using PilotsRUs.API.WebApi.Features.Airports;
@@ -99,6 +100,7 @@ app.MapSoftwareDeveloperEndpoints();
 app.MapAircraftEndpoints();
 app.MapScheduleTemplateEndpoints();
 app.MapScheduleEndpoints();
+app.MapAccountEndpoints();
 
 var summaries = new[]
 {

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
 using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.Shared.SDK.Auth;
 
@@ -14,7 +15,8 @@ public static class AuthEndpoints
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             IJwtTokenService jwtTokenService,
-            IRefreshTokenService refreshTokenService) =>
+            IRefreshTokenService refreshTokenService,
+            IOptions<JwtOptions> jwtOptions) =>
         {
             var user = await userManager.FindByEmailAsync(request.Email);
             if (user is null)
@@ -29,7 +31,9 @@ public static class AuthEndpoints
             }
 
             var roles = await userManager.GetRolesAsync(user);
-            var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(user, roles);
+            var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(
+                user.Id, user.Email ?? string.Empty, jwtOptions.Value.Audience,
+                [new Claim(ClaimTypes.GivenName, user.FirstName), new Claim(ClaimTypes.Surname, user.LastName)], roles);
             var (refreshToken, refreshExpiresAtUtc) = await refreshTokenService.IssueAsync(user.Id, Guid.NewGuid());
 
             return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, refreshToken, refreshExpiresAtUtc, (IReadOnlyList<string>)roles));
@@ -41,7 +45,8 @@ public static class AuthEndpoints
             RefreshTokenRequest request,
             IRefreshTokenService refreshTokenService,
             UserManager<ApplicationUser> userManager,
-            IJwtTokenService jwtTokenService) =>
+            IJwtTokenService jwtTokenService,
+            IOptions<JwtOptions> jwtOptions) =>
         {
             var result = await refreshTokenService.RotateAsync(request.RefreshToken);
             if (result.Outcome != RefreshTokenOutcome.Success)
@@ -50,7 +55,9 @@ public static class AuthEndpoints
             }
 
             var roles = await userManager.GetRolesAsync(result.User!);
-            var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(result.User!, roles);
+            var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateToken(
+                result.User!.Id, result.User.Email ?? string.Empty, jwtOptions.Value.Audience,
+                [new Claim(ClaimTypes.GivenName, result.User.FirstName), new Claim(ClaimTypes.Surname, result.User.LastName)], roles);
 
             return Results.Ok(new LoginResponse(accessToken, accessExpiresAtUtc, result.NewRawToken!, result.NewExpiresAtUtc!.Value, (IReadOnlyList<string>)roles));
         })

@@ -3,30 +3,34 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using PilotsRUs.API.WebApi.Data;
 
 namespace PilotsRUs.API.WebApi.Features.Auth;
 
 public interface IJwtTokenService
 {
-    (string Token, DateTimeOffset ExpiresAtUtc) CreateToken(ApplicationUser user, IEnumerable<string> roles);
+    (string Token, DateTimeOffset ExpiresAtUtc) CreateToken(
+        Guid subjectId, string email, string audience, IEnumerable<Claim> additionalClaims, IEnumerable<string> roles);
 }
 
+// Shared signing mechanics (key/issuer/expiry) for both Admin (ApplicationUser) and Account tokens - the
+// audience differs per caller (see AuthServiceCollectionExtensions.AddApplicationJwtAuth's two registered
+// JWT bearer schemes), which is what keeps the two token types from validating against each other's
+// endpoints despite sharing this one signing implementation.
 public sealed class JwtTokenService(IOptions<JwtOptions> options) : IJwtTokenService
 {
     private readonly JwtOptions _options = options.Value;
 
-    public (string Token, DateTimeOffset ExpiresAtUtc) CreateToken(ApplicationUser user, IEnumerable<string> roles)
+    public (string Token, DateTimeOffset ExpiresAtUtc) CreateToken(
+        Guid subjectId, string email, string audience, IEnumerable<Claim> additionalClaims, IEnumerable<string> roles)
     {
         var expiresAtUtc = DateTimeOffset.UtcNow.Add(_options.Expiry);
 
         List<Claim> claims =
         [
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+            new(JwtRegisteredClaimNames.Sub, subjectId.ToString()),
+            new(JwtRegisteredClaimNames.Email, email),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(ClaimTypes.GivenName, user.FirstName),
-            new(ClaimTypes.Surname, user.LastName),
+            ..additionalClaims,
             ..roles.Select(role => new Claim(ClaimTypes.Role, role))
         ];
 
@@ -36,7 +40,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options) : IJwtTokenSer
 
         var token = new JwtSecurityToken(
             issuer: _options.Issuer,
-            audience: _options.Audience,
+            audience: audience,
             claims: claims,
             expires: expiresAtUtc.UtcDateTime,
             signingCredentials: signingCredentials);

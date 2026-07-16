@@ -7,7 +7,7 @@ namespace PilotsRUs.API.WebApi.Tests.Features.Auth;
 
 public sealed class Argon2PasswordHasherTests
 {
-    private readonly Argon2PasswordHasher _hasher = new(Options.Create(new Argon2Options()));
+    private readonly Argon2PasswordHasher _hasher = new(new Argon2Hasher(Options.Create(new Argon2Options())));
     private readonly ApplicationUser _user = new() { UserName = "test@pilotsrus.test", Email = "test@pilotsrus.test", FirstName = "Test", LastName = "User" };
 
     [Fact]
@@ -47,11 +47,11 @@ public sealed class Argon2PasswordHasherTests
     public void VerifyHashedPassword_WhenConfiguredParametersChange_ReturnsSuccessRehashNeeded()
     {
         var oldOptions = Options.Create(new Argon2Options { MemoryKib = 8, Iterations = 1, Parallelism = 1 });
-        var oldHasher = new Argon2PasswordHasher(oldOptions);
+        var oldHasher = new Argon2PasswordHasher(new Argon2Hasher(oldOptions));
         var hash = oldHasher.HashPassword(_user, "correct-password");
 
         var newOptions = Options.Create(new Argon2Options { MemoryKib = 16, Iterations = 1, Parallelism = 1 });
-        var newHasher = new Argon2PasswordHasher(newOptions);
+        var newHasher = new Argon2PasswordHasher(new Argon2Hasher(newOptions));
 
         var result = newHasher.VerifyHashedPassword(_user, hash, "correct-password");
 

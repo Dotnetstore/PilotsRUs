@@ -20,9 +20,11 @@ management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see
 **Airport** → **Software Developer** → **Aircraft** → **Schedule Template** → **Schedule** are all shipped.
 `Schedule` (see "Schedules" below) is generated automatically from `ScheduleTemplate` recurrence patterns by
 `ScheduleGenerationBackgroundService`, the solution's first background service — there's no manual
-Create/Update/Delete for it. Other domain entities (Pilot, Airline, Job, etc.) still don't exist; add them
-only as their own scoped features, following the established CRUD pattern where it fits. When adding new
-projects, register them in `PilotsRUs.slnx`
+Create/Update/Delete for it. `User.App` now has its own real architecture (DI, EF Core/SQLite, MVVM) and its
+first feature — end-user **Account** registration/login/logout (see "Accounts" and "User.App architecture"
+below), a separate identity concept from Admin's `ApplicationUser`. Other domain entities (Pilot, Airline,
+Job, etc.) still don't exist; add them only as their own scoped features, following the established CRUD
+pattern where it fits. When adding new projects, register them in `PilotsRUs.slnx`
 (the XML-based solution format — add `<Project Path="..." />` entries, not a `.sln` file).
 
 ## Project structure
@@ -34,7 +36,9 @@ projects, register them in `PilotsRUs.slnx`
 - `PilotsRUs.Admin.App` — ASP.NET Razor Pages admin interface, styled with AdminLTE 4, cookie-based browser
   session bridging an API-issued JWT; references `Shared.SDK` and `ServiceDefaults`
 - `PilotsRUs.User.App` — Avalonia MVVM desktop app for end users; references `Shared.SDK`. Not orchestrated
-  by Aspire since it's a standalone installed app, not a hosted service
+  by Aspire since it's a standalone installed app, not a hosted service. Has its own DI host
+  (`Microsoft.Extensions.Hosting`) and local SQLite database via EF Core (`Data/UserAppDbContext.cs`) — see
+  "User.App architecture" below for the full setup
 - `PilotsRUs.AppHost` — the Aspire app host; provisions a Postgres container (resource `postgres`, database
   `pilotsrus`) and orchestrates `API.WebApi` and `Admin.App` for local development (resource names `api`
   and `admin`); only `api` references the database — `admin` talks to `api`, never to Postgres directly
@@ -551,6 +555,120 @@ no policy) and a browse-only `Pages/Schedules/Index.cshtml(.cs)` in Admin.App
   chain, taking explicit ICAO/ISO-alpha-2 codes per call (not derived from the test qualifier string) to
   avoid accidental collisions across test methods sharing one `ApiFactory` instance.
 
+## Accounts
+
+End-user (player) identities for `User.App` — deliberately separate from `ApplicationUser` (Admin/staff
+Identity accounts): a player has no roles, no admin-role gating, and self-service registration with no
+approval step, which don't fit Identity's model the way Admin's accounts do. `Data/Account.cs`: `Guid` PK,
+required unique `Email` (max 256), required `PasswordHash`, required `DisplayName` (max 50, **not**
+required to be unique — a flight-sim callsign-style name, not a login identifier), `CreatedAtUtc`. Lives in
+the same single `ApplicationDbContext` as every other entity (no separate DbContext for domain entities).
+No cross-check against `ApplicationUser.Email` — Accounts and Admin users are fully independent by design.
+
+- **Dual JWT audience/scheme separation is the key design decision here.** Both `ApplicationUser` and
+  `Account` tokens are signed with the same key/issuer (`JwtTokenService`, generalized below), which means
+  without further scoping, an Account-issued token would satisfy every existing `.RequireAuthorization()`
+  endpoint with no policy (Manufacturers/Airports/Aircraft/ScheduleTemplates CRUD, etc.) — those only check
+  "is this a valid token," not "is this specifically an ApplicationUser token." Fixed by giving Account
+  tokens a distinct audience (`JwtOptions.AccountAudience`, `"PilotsRUs.User"` vs. Admin's
+  `"PilotsRUs.Admin"`) and a second registered JWT bearer scheme, `"AccountBearer"`
+  (`AuthServiceCollectionExtensions.AddApplicationJwtAuth`). Every existing endpoint still uses the
+  **default** scheme (`"Bearer"`, Admin-audience-only) via plain `.RequireAuthorization()`, so it
+  automatically rejects Account tokens — the audience mismatch fails ASP.NET Core's default JWT bearer
+  validation closed, with **zero changes needed to any already-shipped endpoint**. Only
+  `GET /account/me` opts in via a new `"Account"` policy
+  (`.AddPolicy("Account", p => p.AddAuthenticationSchemes("AccountBearer").RequireAuthenticatedUser())`).
+  `AccountEndpointsTests.AccountToken_CannotAccessAdminScopedEndpoint` is the regression guard proving this
+  actually works (calls `GET /manufacturers` with an Account token, asserts it's rejected) — if this test
+  ever starts failing, the audience scoping has broken.
+- **`IJwtTokenService.CreateToken` is generalized** away from `ApplicationUser`-specific parameters to
+  `(Guid subjectId, string email, string audience, IEnumerable<Claim> additionalClaims, IEnumerable<string>
+  roles)`, since both Admin and Account logins need identical signing mechanics (key/issuer/expiry) and only
+  differ in audience + claim set. `AuthEndpoints.cs`'s two call sites pass `jwtOptions.Audience` +
+  `[GivenName, Surname]`; `AccountEndpoints.cs` passes `jwtOptions.AccountAudience` + a single `Name` claim
+  (`DisplayName`) and an empty roles list.
+- **`Argon2Hasher` was extracted from `Argon2PasswordHasher`** (`Features/Auth/Argon2Hasher.cs`) — the
+  PHC-string hash/verify logic is now `IArgon2Hasher`, Identity-agnostic, returning a new
+  `Argon2VerificationResult { Failed, Success, SuccessRehashNeeded }` enum.
+  `Argon2PasswordHasher : IPasswordHasher<ApplicationUser>` is now a thin adapter over it. This is a
+  refactor of existing code, not a duplication — it's the only way `Account` registration/login can reuse
+  the exact same Argon2id parameters/PHC-string format without going through `UserManager<ApplicationUser>`
+  (which `Account` doesn't have, since it isn't an Identity user type).
+- **`AccountRefreshToken`/`AccountRefreshTokenService` are a deliberate duplication of `RefreshToken`/
+  `RefreshTokenService`, not a generalization of them** — same rotation/reuse-detection shape, same
+  `IOptions<RefreshTokenOptions>` expiry config, but operating on `Account` instead of `ApplicationUser`.
+  `RefreshTokenService`'s behavior is already carefully documented and relied upon for Admin auth; a
+  polymorphic version supporting two different principal types was judged riskier than a second,
+  independent ~120-line implementation. Unlike `RefreshToken.UserId` (also `Cascade`),
+  `AccountRefreshToken.AccountId` uses `Cascade` too — refresh tokens are disposable session state, not
+  reference data, for both principal types.
+- **Registration does not auto-login** — `POST /account/register` returns just `AccountResponse` (no
+  tokens); the client (`User.App`) navigates to the Login screen next, not straight into the app.
+- **Password validation**: `[MinLength(8)]`-equivalent manual check in `AccountEndpoints.cs`'s register
+  handler, enforced unconditionally (not dev-only relaxed like `ApplicationUser`'s policy) — this is the
+  first genuinely public, always-on self-service registration endpoint in the system, unlike the
+  seeded-only Admin accounts.
+- **DTOs**: `Shared.SDK/Accounts/` (`RegisterAccountRequest`, `AccountResponse`, `AccountLoginRequest`,
+  `AccountLoginResponse`, `CurrentAccountResponse`) — independent of `Shared.SDK/Auth/`'s Admin-specific
+  DTOs (`LoginResponse` carries an Admin-only `Roles` field), except reusing the existing, genuinely generic
+  `Shared.SDK.Auth.RefreshTokenRequest` (`string RefreshToken`) for `/account/refresh`/`/account/logout`
+  request bodies rather than adding a single-field duplicate.
+- **Known follow-ups, not built yet**: no password reset/email confirmation flow (no email-sending
+  infrastructure anywhere in this codebase); no brute-force/lockout protection on `/account/login` (Identity
+  gives `ApplicationUser` this via `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`;
+  `Account` has no equivalent since it doesn't go through Identity at all).
+
+## User.App architecture
+
+`User.App` had no real architecture before this — just the unmodified Avalonia template. This section
+covers what was stood up to support Account registration/login/logout, and is the reference pattern for
+every future `User.App` feature.
+
+- **DI host**: `Program.cs`'s `Main` builds a `Host.CreateApplicationBuilder(args)` (registering
+  `IHttpClientFactory`, `IDbContextFactory<UserAppDbContext>`, `IAuthSessionService`, `IAccountApiClient`,
+  `BearerTokenHandler`, and every ViewModel) **before** calling
+  `BuildAvaloniaApp().StartWithClassicDesktopLifetime(args)`. Avalonia constructs `App` itself with no
+  constructor-injection hook, so the built `IServiceProvider` is stashed on a static `App.Services`
+  property that `OnFrameworkInitializationCompleted` reads to resolve `MainWindowViewModel`. `appsettings.json`
+  (`Api:BaseAddress`, default `https://localhost:7182`) is loaded automatically by `Host.CreateApplicationBuilder`
+  the same way `WebApplication.CreateBuilder` does — no extra configuration wiring needed, just
+  `CopyToOutputDirectory` in the `.csproj`.
+- **Local SQLite via EF Core**: `Data/UserAppDbContext.cs`, registered via
+  `AddDbContextFactory<UserAppDbContext>` (matching `API.WebApi`'s `IDbContextFactory<T>` convention for
+  non-Identity contexts, even though there's no Identity concern here at all), DB file at
+  `%LOCALAPPDATA%/PilotsRUs/pilotsrus.db` (`UserAppDbContext.GetDefaultDbPath()`), migrated unconditionally
+  at startup (`dbContext.Database.Migrate()` — no `IsDevelopment()` gate, a desktop app has no such
+  distinction). `Data/DesignTimeDbContextFactory.cs` mirrors `API.WebApi`'s, needed for
+  `dotnet ef migrations add --project PilotsRUs.User.App` tooling support.
+  - **Starts with zero entities.** Nothing auth-related is persisted locally — the access/refresh token
+    pair lives only in `IAuthSessionService` (in-memory singleton), and User.App always shows the login
+    screen on launch (no "remember me"/session restore). The `InitialCreate` migration is intentionally
+    near-empty. The first real synced entity arrives whenever a future `User.App` feature actually needs
+    cached data (e.g. browsing cached `Schedule`s) — don't invent one before then.
+- **`BearerTokenHandler`** (`Infrastructure/BearerTokenHandler.cs`) mirrors `Admin.App`'s handler of the
+  same name, but simpler: no `HttpContext`/cookie involved, just reads/writes `IAuthSessionService`
+  directly, and uses a single `static readonly SemaphoreSlim` for the 401→refresh→retry serialization
+  (not `Admin.App`'s `ConcurrentDictionary<string, SemaphoreSlim>` keyed per browser session) since exactly
+  one session ever exists in a desktop process. Attached to the named `"Api"` `HttpClient`; the refresh call
+  itself uses a plain unnamed client (with `BaseAddress` set manually from `IOptions<ApiOptions>`) to avoid
+  recursing back into itself.
+- **MVVM navigation — no router/navigation library.** `MainWindowViewModel` is DI-resolved (gets the real
+  `IAccountApiClient`/`IAuthSessionService` from the container) and holds an observable `CurrentViewModel`
+  property; it manually constructs each leaf screen ViewModel (`LoginViewModel`/`RegisterViewModel`/
+  `ShellViewModel`) via small private factory methods, passing plain `Action` callbacks for "navigate to X"
+  (e.g. `LoginViewModel`'s `onLoginSucceeded` sets `CurrentViewModel = CreateShellViewModel()`).
+  `MainWindow.axaml`'s content is `<ContentControl Content="{Binding CurrentViewModel}"/>`, resolved to the
+  matching View by the pre-existing `ViewLocator` (registered globally in `App.axaml`'s
+  `Application.DataTemplates`, string-replaces `ViewModel`→`View` in the type's full name — already worked
+  for any future `XViewModel`/`XView` pair with zero changes). This is deliberately not a generic navigation
+  service, since navigation only happens in this one place so far.
+- **Testing ViewModels without HTTP mocking**: `LoginViewModel`/`RegisterViewModel`/`ShellViewModel` all
+  depend on `IAccountApiClient` (an interface), not `HttpClient` directly, so
+  `PilotsRUs.User.App.Tests/ViewModels/*Tests.cs` use a hand-rolled `FakeAccountApiClient`
+  (`Services/FakeAccountApiClient.cs`) instead of mocking `HttpMessageHandler`. `IAuthSessionService` isn't
+  faked at all — its real `AuthSessionService` implementation is trivial in-memory state, so tests just
+  instantiate it directly and assert against its real behavior.
+
 ## Architecture principles
 
 - Modular monolith with vertical slice architecture, following SOLID principles
@@ -576,15 +694,17 @@ conflict since they resolve via different service types — don't collapse them 
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
   `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`,
   `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`, `Data/ScheduleTemplate.cs`,
-  `Data/Schedule.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`,
-  `Manufacturers`, `AircraftModels` (the first FK relationship between two non-Identity entities — see
-  "Aircraft Models" above), `Countries`, `Airports` (FK to `Countries`), `SoftwareDevelopers`, `Aircraft`
-  (FK to both `AircraftModels` and `SoftwareDevelopers` — see "Aircraft" above), `ScheduleTemplates` (FK to
-  `Airports` twice plus `Aircraft` once — see "Schedule Templates" above), and `Schedules` (FK to
-  `ScheduleTemplates` — see "Schedules" above).
+  `Data/Schedule.cs`, `Data/Account.cs`, `Data/AccountRefreshToken.cs`. Identity's own tables (`AspNetUsers`,
+  `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels` (the first FK relationship
+  between two non-Identity entities — see "Aircraft Models" above), `Countries`, `Airports` (FK to
+  `Countries`), `SoftwareDevelopers`, `Aircraft` (FK to both `AircraftModels` and `SoftwareDevelopers` — see
+  "Aircraft" above), `ScheduleTemplates` (FK to `Airports` twice plus `Aircraft` once — see "Schedule
+  Templates" above), `Schedules` (FK to `ScheduleTemplates` — see "Schedules" above), `Accounts`, and
+  `AccountRefreshTokens` (FK to `Accounts` — see "Accounts" above).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
   `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`,
-  `AddSoftwareDevelopersAndAircraft`, `AddScheduleTemplates`, `AddScheduleTemplateStartDateAndSchedules`).
+  `AddSoftwareDevelopersAndAircraft`, `AddScheduleTemplates`, `AddScheduleTemplateStartDateAndSchedules`,
+  `AddAccounts`).
   `AddSoftwareDevelopersAndAircraft` is a single combined migration rather than two separate ones — both
   entities were added to `ApplicationDbContext` in the same edit before either `migrations add` call, so a
   first `AddSoftwareDevelopers` migration would have captured both tables' diff anyway, leaving a follow-up

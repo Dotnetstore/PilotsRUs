@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PilotsRUs.User.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="450"
+             x:Class="PilotsRUs.User.App.Views.RegisterView"
+             x:DataType="vm:RegisterViewModel">
+
+    <StackPanel Spacing="8" Margin="24" VerticalAlignment="Center" HorizontalAlignment="Center" Width="300">
+        <TextBlock Text="Create account" FontSize="20" FontWeight="Bold" Margin="0,0,0,12" />
+
+        <TextBlock Text="Email" />
+        <TextBox Text="{Binding Email}" PlaceholderText="pilot@example.com" />
+
+        <TextBlock Text="Display name" />
+        <TextBox Text="{Binding DisplayName}" PlaceholderText="Maverick" />
+
+        <TextBlock Text="Password" />
+        <TextBox Text="{Binding Password}" PasswordChar="*" />
+
+        <TextBlock Text="Confirm password" />
+        <TextBox Text="{Binding ConfirmPassword}" PasswordChar="*" />
+
+        <TextBlock Text="{Binding ErrorMessage}"
+                   Foreground="Red"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+        <Button Content="Create account" Command="{Binding RegisterCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Stretch" Margin="0,12,0,0" />
+        <Button Content="Back to login" Command="{Binding GoToLoginCommand}" HorizontalAlignment="Stretch" />
+    </StackPanel>
+</UserControl>

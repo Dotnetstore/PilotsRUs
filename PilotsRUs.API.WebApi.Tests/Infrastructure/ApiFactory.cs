@@ -28,7 +28,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 ["ConnectionStrings:pilotsrus"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
                 ["Jwt:Key"] = "Test-Only-Signing-Key-Not-For-Production-Use-0123456789",
                 ["Jwt:Issuer"] = "PilotsRUs.API.Tests",
-                ["Jwt:Audience"] = "PilotsRUs.Admin.Tests"
+                ["Jwt:Audience"] = "PilotsRUs.Admin.Tests",
+                ["Jwt:AccountAudience"] = "PilotsRUs.User.Tests"
             });
         });
 

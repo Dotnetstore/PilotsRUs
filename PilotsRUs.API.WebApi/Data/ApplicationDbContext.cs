@@ -15,6 +15,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Aircraft> Aircraft => Set<Aircraft>();
     public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();
     public DbSet<Schedule> Schedules => Set<Schedule>();
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<AccountRefreshToken> AccountRefreshTokens => Set<AccountRefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -91,6 +93,23 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.HasIndex(s => new { s.ScheduleTemplateId, s.FlightDate }).IsUnique();
             entity.HasOne(s => s.ScheduleTemplate).WithMany().HasForeignKey(s => s.ScheduleTemplateId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Account>(entity =>
+        {
+            entity.Property(a => a.Email).IsRequired().HasMaxLength(256);
+            entity.Property(a => a.PasswordHash).IsRequired();
+            entity.Property(a => a.DisplayName).IsRequired().HasMaxLength(50);
+            entity.HasIndex(a => a.Email).IsUnique();
+        });
+
+        builder.Entity<AccountRefreshToken>(entity =>
+        {
+            entity.HasIndex(t => t.TokenHash).IsUnique();
+            entity.HasIndex(t => t.FamilyId);
+            // Cascade, not Restrict - refresh tokens are disposable session state (same reasoning as
+            // RefreshToken.UserId), not reference data.
+            entity.HasOne(t => t.Account).WithMany().HasForeignKey(t => t.AccountId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
