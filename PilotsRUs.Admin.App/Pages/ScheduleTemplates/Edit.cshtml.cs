@@ -69,7 +69,8 @@ public sealed class EditModel(IHttpClientFactory httpClientFactory) : PageModel
             AircraftId = scheduleTemplate.AircraftId,
             DistanceNauticalMiles = scheduleTemplate.DistanceNauticalMiles,
             FlightTime = TimeOnly.FromTimeSpan(scheduleTemplate.FlightTime),
-            Frequency = scheduleTemplate.Frequency
+            Frequency = scheduleTemplate.Frequency,
+            StartDate = scheduleTemplate.StartDate
         };
 
         await LoadOptionsAsync();
@@ -89,7 +90,7 @@ public sealed class EditModel(IHttpClientFactory httpClientFactory) : PageModel
             $"/schedule-templates/{Id}",
             new UpdateScheduleTemplateRequest(
                 Input.FlightNumber, Input.DepartureAirportId, Input.ArrivalAirportId, Input.AircraftId,
-                Input.DistanceNauticalMiles, Input.FlightTime.ToTimeSpan(), Input.Frequency),
+                Input.DistanceNauticalMiles, Input.FlightTime.ToTimeSpan(), Input.Frequency, Input.StartDate),
             JsonOptions);
 
         if (response.IsSuccessStatusCode)
@@ -155,5 +156,8 @@ public sealed class EditModel(IHttpClientFactory httpClientFactory) : PageModel
 
         [Required]
         public ScheduleFrequency Frequency { get; set; }
+
+        [Required, DataType(DataType.Date)]
+        public DateOnly StartDate { get; set; }
     }
 }

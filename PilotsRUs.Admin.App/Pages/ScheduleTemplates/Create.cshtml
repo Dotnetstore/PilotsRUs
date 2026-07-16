@@ -50,6 +50,11 @@
                 <select asp-for="Input.Frequency" asp-items="Model.FrequencyOptions" class="form-select"></select>
                 <span asp-validation-for="Input.Frequency" class="text-danger"></span>
             </div>
+            <div class="mb-3">
+                <label asp-for="Input.StartDate" class="form-label"></label>
+                <input asp-for="Input.StartDate" type="date" class="form-control" />
+                <span asp-validation-for="Input.StartDate" class="text-danger"></span>
+            </div>
             <button type="submit" class="btn btn-primary">Create</button>
             <a asp-page="/ScheduleTemplates/Index" class="btn btn-secondary">Cancel</a>
         </form>

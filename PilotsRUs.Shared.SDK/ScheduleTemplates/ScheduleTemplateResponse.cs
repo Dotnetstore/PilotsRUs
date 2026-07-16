@@ -13,4 +13,5 @@ public sealed record ScheduleTemplateResponse(
     string AircraftRegistrationNumber,
     int DistanceNauticalMiles,
     TimeSpan FlightTime,
-    ScheduleFrequency Frequency);
+    ScheduleFrequency Frequency,
+    DateOnly StartDate);

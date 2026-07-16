@@ -7,4 +7,5 @@ public sealed record CreateScheduleTemplateRequest(
     Guid AircraftId,
     int DistanceNauticalMiles,
     TimeSpan FlightTime,
-    ScheduleFrequency Frequency);
+    ScheduleFrequency Frequency,
+    DateOnly StartDate);

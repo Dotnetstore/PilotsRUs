@@ -7,4 +7,5 @@ public sealed record UpdateScheduleTemplateRequest(
     Guid AircraftId,
     int DistanceNauticalMiles,
     TimeSpan FlightTime,
-    ScheduleFrequency Frequency);
+    ScheduleFrequency Frequency,
+    DateOnly StartDate);

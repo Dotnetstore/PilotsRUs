@@ -10,6 +10,7 @@ using PilotsRUs.API.WebApi.Features.Auth;
 using PilotsRUs.API.WebApi.Features.Countries;
 using PilotsRUs.API.WebApi.Features.Manufacturers;
 using PilotsRUs.API.WebApi.Features.ScheduleTemplates;
+using PilotsRUs.API.WebApi.Features.Schedules;
 using PilotsRUs.API.WebApi.Features.SoftwareDevelopers;
 using PilotsRUs.API.WebApi.Features.Users;
 
@@ -28,6 +29,11 @@ builder.Services.AddOpenApi();
 // wire format self-describing. Registered globally since this affects zero existing behavior yet.
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+// TimeProvider.System registered explicitly so ScheduleGenerationBackgroundService can take TimeProvider
+// as a normal constructor dependency (tests substitute a fake one directly, bypassing DI).
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<ScheduleGenerationBackgroundService>();
 
 var app = builder.Build();
 
@@ -92,6 +98,7 @@ app.MapAirportEndpoints();
 app.MapSoftwareDeveloperEndpoints();
 app.MapAircraftEndpoints();
 app.MapScheduleTemplateEndpoints();
+app.MapScheduleEndpoints();
 
 var summaries = new[]
 {

@@ -71,7 +71,8 @@ public static class ScheduleTemplateEndpoints
                 AircraftId = request.AircraftId,
                 DistanceNauticalMiles = request.DistanceNauticalMiles,
                 FlightTime = request.FlightTime,
-                Frequency = request.Frequency
+                Frequency = request.Frequency,
+                StartDate = request.StartDate
             };
             dbContext.ScheduleTemplates.Add(scheduleTemplate);
             await dbContext.SaveChangesAsync();
@@ -81,7 +82,7 @@ public static class ScheduleTemplateEndpoints
                 scheduleTemplate.DepartureAirportId, departureAirport.IcaoCode, departureAirport.Name,
                 scheduleTemplate.ArrivalAirportId, arrivalAirport.IcaoCode, arrivalAirport.Name,
                 scheduleTemplate.AircraftId, aircraft.RegistrationNumber,
-                scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency);
+                scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency, scheduleTemplate.StartDate);
             return Results.Created($"/schedule-templates/{scheduleTemplate.Id}", response);
         }).WithName("CreateScheduleTemplate");
 
@@ -125,6 +126,7 @@ public static class ScheduleTemplateEndpoints
             scheduleTemplate.DistanceNauticalMiles = request.DistanceNauticalMiles;
             scheduleTemplate.FlightTime = request.FlightTime;
             scheduleTemplate.Frequency = request.Frequency;
+            scheduleTemplate.StartDate = request.StartDate;
 
             await dbContext.SaveChangesAsync();
 
@@ -133,7 +135,7 @@ public static class ScheduleTemplateEndpoints
                 scheduleTemplate.DepartureAirportId, departureAirport.IcaoCode, departureAirport.Name,
                 scheduleTemplate.ArrivalAirportId, arrivalAirport.IcaoCode, arrivalAirport.Name,
                 scheduleTemplate.AircraftId, aircraft.RegistrationNumber,
-                scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency);
+                scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency, scheduleTemplate.StartDate);
             return Results.Ok(response);
         }).WithName("UpdateScheduleTemplate");
 
@@ -147,11 +149,25 @@ public static class ScheduleTemplateEndpoints
                 return Results.NotFound();
             }
 
-            // Hard delete - nothing references ScheduleTemplate yet. Once the future Schedule entity does,
-            // this needs the same Restrict-guard treatment DeleteManufacturer/DeleteAircraftModel/
-            // DeleteSoftwareDeveloper have.
+            // Blocks deletion rather than cascading - same reasoning as every other guarded delete. The FK
+            // itself uses DeleteBehavior.Restrict; this pre-check turns what would otherwise be an
+            // unhandled 500 (FK violation) into a clean 409.
+            if (await dbContext.Schedules.AnyAsync(s => s.ScheduleTemplateId == id))
+            {
+                return Results.Conflict($"Cannot delete '{scheduleTemplate.FlightNumber}' - it still has generated schedules.");
+            }
+
             dbContext.ScheduleTemplates.Remove(scheduleTemplate);
-            await dbContext.SaveChangesAsync();
+
+            try
+            {
+                await dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Closes the TOCTOU gap between the AnyAsync check above and this delete.
+                return Results.Conflict($"Cannot delete '{scheduleTemplate.FlightNumber}' - it still has generated schedules.");
+            }
 
             return Results.NoContent();
         }).WithName("DeleteScheduleTemplate");
@@ -164,5 +180,5 @@ public static class ScheduleTemplateEndpoints
         scheduleTemplate.DepartureAirportId, scheduleTemplate.DepartureAirport.IcaoCode, scheduleTemplate.DepartureAirport.Name,
         scheduleTemplate.ArrivalAirportId, scheduleTemplate.ArrivalAirport.IcaoCode, scheduleTemplate.ArrivalAirport.Name,
         scheduleTemplate.AircraftId, scheduleTemplate.Aircraft.RegistrationNumber,
-        scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency);
+        scheduleTemplate.DistanceNauticalMiles, scheduleTemplate.FlightTime, scheduleTemplate.Frequency, scheduleTemplate.StartDate);
 }

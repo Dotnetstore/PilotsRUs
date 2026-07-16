@@ -14,6 +14,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<SoftwareDeveloper> SoftwareDevelopers => Set<SoftwareDeveloper>();
     public DbSet<Aircraft> Aircraft => Set<Aircraft>();
     public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();
+    public DbSet<Schedule> Schedules => Set<Schedule>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -84,6 +85,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne(s => s.DepartureAirport).WithMany().HasForeignKey(s => s.DepartureAirportId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(s => s.ArrivalAirport).WithMany().HasForeignKey(s => s.ArrivalAirportId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(s => s.Aircraft).WithMany().HasForeignKey(s => s.AircraftId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Schedule>(entity =>
+        {
+            entity.HasIndex(s => new { s.ScheduleTemplateId, s.FlightDate }).IsUnique();
+            entity.HasOne(s => s.ScheduleTemplate).WithMany().HasForeignKey(s => s.ScheduleTemplateId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

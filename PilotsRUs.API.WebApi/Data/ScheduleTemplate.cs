@@ -12,6 +12,7 @@ public sealed class ScheduleTemplate
     public required int DistanceNauticalMiles { get; set; }
     public required TimeSpan FlightTime { get; set; }
     public required ScheduleFrequency Frequency { get; set; }
+    public required DateOnly StartDate { get; set; }
 
     public Airport DepartureAirport { get; init; } = null!;
     public Airport ArrivalAirport { get; init; } = null!;

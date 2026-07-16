@@ -17,12 +17,12 @@ The solution scaffold plus a working infra layer are in place: Postgres/EF Core 
 login with rotating refresh tokens, role-based authorization (a single "Admin" role) with a full Users CRUD
 management screen in `Admin.App`, and AdminLTE 4 styling are implemented — see "Authentication",
 "Authorization and Users CRUD", and "Database" below. **Manufacturer** → **Aircraft Model** → **Country** →
-**Airport** → **Software Developer** → **Aircraft** → **Schedule Template** are all shipped. `Schedule
-Template` (see "Schedule Templates" below) is a reusable recurring-flight definition (route, aircraft,
-timing, frequency) that a not-yet-built **Schedule** feature will later expand into actual dated flight
-instances — `Schedule` itself doesn't exist yet, don't invent it speculatively. Other domain entities
-(Pilot, Airline, Job, etc.) also still don't exist; add them only as their own scoped features, following
-the established CRUD pattern where it fits. When adding new projects, register them in `PilotsRUs.slnx`
+**Airport** → **Software Developer** → **Aircraft** → **Schedule Template** → **Schedule** are all shipped.
+`Schedule` (see "Schedules" below) is generated automatically from `ScheduleTemplate` recurrence patterns by
+`ScheduleGenerationBackgroundService`, the solution's first background service — there's no manual
+Create/Update/Delete for it. Other domain entities (Pilot, Airline, Job, etc.) still don't exist; add them
+only as their own scoped features, following the established CRUD pattern where it fits. When adding new
+projects, register them in `PilotsRUs.slnx`
 (the XML-based solution format — add `<Project Path="..." />` entries, not a `.sln` file).
 
 ## Project structure
@@ -426,7 +426,11 @@ collection navigation — same no-cascade-path concern as everywhere else, since
 required `AircraftId` (FK to `Aircraft`, `Restrict`), required `DistanceNauticalMiles` (`int`, manually
 entered — `Airport` has no lat/long yet, so this can't be computed from the two chosen airports), required
 `FlightTime` (`TimeSpan`, maps to Postgres' native `interval` type), required `Frequency`
-(`ScheduleFrequency`, see below).
+(`ScheduleFrequency`, see below), required `StartDate` (`DateOnly`) — the anchor `ScheduleGenerator` (see
+"Schedules" below) counts a template's recurrence pattern from: `EveryThirdDay` flies on `StartDate`,
+`StartDate+3`, `StartDate+6`, etc. Added in a later migration (`AddScheduleTemplateStartDateAndSchedules`)
+after `ScheduleTemplate` had already shipped without it — necessary once schedule generation needed a
+concrete reference point for "every Nth day," which the original design left unspecified.
 
 - **`ScheduleFrequency` lives in `Shared.SDK/ScheduleTemplates/`, not `Data/`**: `{ Daily, EverySecondDay,
   EveryThirdDay, EveryFourthDay, EveryFifthDay, EverySixthDay, Weekly }` — it has to be usable both by the
@@ -455,9 +459,9 @@ entered — `Airport` has no lat/long yet, so this can't be computed from the tw
   checks and before the (also FK-existence-only) `AircraftId` check.
 - **No seed data** — same reasoning as `SoftwareDeveloper`/`Aircraft`: only makes sense once real Airports
   and a real Aircraft exist to reference.
-- **No delete guard yet**: `DeleteScheduleTemplate` is a genuine hard delete — nothing references
-  `ScheduleTemplate` yet. Once the future `Schedule` entity does, it needs the same `Restrict` + pre-check
-  guard treatment every other guarded delete in this codebase has.
+- **Delete guard**: `DeleteScheduleTemplate` blocks deletion (409) while any `Schedule` still references it
+  — the same `Restrict` + pre-check pattern as every other guarded delete, retrofitted once `Schedule` (see
+  below) shipped and closing the exact gap this section used to flag as deferred.
 - **Authorization**: same as every other domain entity — `.RequireAuthorization()` with no policy name on
   `/schedule-templates/*`, `AuthorizeFolder("/ScheduleTemplates")` with no policy argument on the Admin.App
   side, nav link in the same shared authenticated-user `@if` block in `_Layout.cshtml`.
@@ -471,7 +475,81 @@ entered — `Airport` has no lat/long yet, so this can't be computed from the tw
   typed `TimeOnly` (not `TimeSpan`) specifically so `<input asp-for="Input.FlightTime" type="time">` binds
   natively via ASP.NET Core's built-in `TimeOnly` support — the PageModel converts
   `Input.FlightTime.ToTimeSpan()` on submit and `TimeOnly.FromTimeSpan(response.FlightTime)` on `Edit`'s
-  `OnGetAsync`. `Delete.cshtml.cs` stays the plain "Delete failed." shape.
+  `OnGetAsync`. `StartDate` is a plain `DateOnly`-typed `<input type="date">` (no conversion needed, unlike
+  `FlightTime`) — `Create`'s `InputModel.StartDate` defaults to today via a property initializer.
+  `Delete.cshtml.cs` stays the plain "Delete failed." shape.
+
+## Schedules
+
+A specific, dated flight instance — one row per `ScheduleTemplate` per date it actually flies.
+`Data/Schedule.cs`: `Guid` PK, required `ScheduleTemplateId` (FK to `ScheduleTemplate`, `Restrict`, no
+inverse collection navigation), required `FlightDate` (`DateOnly`). A composite unique index on
+`(ScheduleTemplateId, FlightDate)` backs this defensively, though `ScheduleGenerator`'s watermark logic
+should make it practically unreachable — see below. **Entirely system-generated**: there is no
+Create/Update/Delete endpoint or Admin.App form for `Schedule` at all, only a read-only API
+(`Features/Schedules/ScheduleEndpoints.cs`, `GET /schedules`/`GET /schedules/{id}`, `.RequireAuthorization()`
+no policy) and a browse-only `Pages/Schedules/Index.cshtml(.cs)` in Admin.App
+(`AuthorizeFolder("/Schedules")` no policy, nav link in the same shared authenticated-user `@if` block).
+
+- **First `IHostedService`/`BackgroundService` in the solution** — `Features/Schedules/
+  ScheduleGenerationBackgroundService.cs`, registered via `builder.Services.AddHostedService<...>()` in
+  `API.WebApi/Program.cs` (the only project with DB access — `Admin.App` never talks to Postgres directly,
+  per "Project structure"). It's a thin timer wrapper: `do { ... } while (await
+  periodicTimer.WaitForNextTickAsync(stoppingToken))` with a 7-day `PeriodicTimer` — the `do/while` shape
+  matters, since it runs the body immediately on startup (not waiting the full 7-day period for a first
+  tick) before settling into a weekly cadence.
+- **Generation logic lives separately from the timer, for testability**: `Features/Schedules/
+  ScheduleGenerator.cs` is a static class. `GenerateDueSchedulesAsync(IDbContextFactory<ApplicationDbContext>,
+  TimeProvider, CancellationToken)` does the DB work; `ComputeFlightDates(templateStartDate, intervalDays,
+  windowStart, windowEnd)` is a pure, directly unit-testable date calculator the former calls per template
+  per week. Both are callable straight from tests without waiting on a real timer.
+- **First use of `TimeProvider`** (the .NET 8+ testable "now" abstraction) instead of raw
+  `DateTime.UtcNow`. `Program.cs` registers `builder.Services.AddSingleton(TimeProvider.System);` so
+  `ScheduleGenerationBackgroundService` takes it as a normal constructor dependency. Tests substitute a
+  hand-rolled `FakeTimeProvider : TimeProvider` (override `GetUtcNow()` only, a few lines) rather than
+  pulling in the `Microsoft.Extensions.TimeProvider.Testing` package for one test class.
+- **The generation algorithm — per-`ScheduleTemplate` watermark, not global**:
+  ```
+  for each ScheduleTemplate:
+      lastGeneratedDate = MAX(Schedule.FlightDate) for this template, or (today - 1) if none exist yet
+      while (lastGeneratedDate < today + 6):        // less than a week of buffer remains
+          windowStart = lastGeneratedDate + 1
+          windowEnd   = lastGeneratedDate + 7
+          for each date in [windowStart, windowEnd] matching the template's StartDate/Frequency pattern:
+              create Schedule row
+          lastGeneratedDate = windowEnd
+  ```
+  **The watermark MUST be computed per template, not as one global `MAX(Schedule.FlightDate)` across every
+  template** — an earlier version of this code used a single global watermark, which silently starves any
+  newly-created `ScheduleTemplate` of generation forever once an older template's watermark has run weeks or
+  months ahead (the global `while` condition would already be satisfied before the new template's own dates
+  are ever considered). This bug was caught by `ScheduleGeneratorTests`' integration tests failing when run
+  together in the same `ApiFactory`-backed test class (each test's own template was starved by an earlier
+  test's already-advanced global watermark) — the same sharing-one-database behavior would have manifested
+  in production the moment a second `ScheduleTemplate` was added after the first had been running a while.
+  Keep the watermark scoped per template if this logic is ever touched again.
+  - **Idempotent by construction**: since each template's watermark only ever advances in whole-week jumps,
+    a date is never processed twice for that template across calls — this is what makes the defensive unique
+    index above practically unreachable in normal operation.
+  - **Catches up automatically**: if the service was offline for 3 weeks, a template's stale watermark makes
+    the `while` loop iterate 3 times in one call (still one week of work per iteration) before the buffer is
+    topped back up. Steady-state (buffer already topped up) needs one real week to pass before the condition
+    is true again, which combined with the weekly timer naturally produces "generate one week, once a week."
+  - `IntervalDays(Frequency)` is `ScheduleFrequencyExtensions.ToIntervalDays()` in `Shared.SDK` (`Daily`=1,
+    ..., `Weekly`=7) — lives there rather than private to the generator since it's a property of the enum's
+    meaning, reusable anywhere `ScheduleFrequency` is used.
+- **Response flattening**: `ScheduleResponse` flattens `FlightNumber`, `DepartureAirportIcaoCode`/`Name`,
+  `ArrivalAirportIcaoCode`/`Name`, and `AircraftRegistrationNumber` from the related `ScheduleTemplate` (via
+  `.Include(s => s.ScheduleTemplate).ThenInclude(...)` chains) — same flattening pattern as
+  `AircraftResponse`/`ScheduleTemplateResponse`. The list endpoint materializes via `.ToListAsync()` first,
+  then maps to `ScheduleResponse` in-memory, since the flattening helper isn't SQL-translatable inside an EF
+  `.Select()` (same reason `AircraftEndpoints.cs`'s list endpoint does this).
+- **No seed data** — same reasoning as `SoftwareDeveloper`/`Aircraft`/`ScheduleTemplate`: entirely
+  system-generated from whatever `ScheduleTemplate`s exist.
+- **Test-data safety**: `ScheduleGeneratorTests`/`ScheduleEndpointsTests` share a `ScheduleTestData` helper
+  class (`Features/Schedules/ScheduleTestData.cs`) that builds a full Airport→Aircraft→ScheduleTemplate
+  chain, taking explicit ICAO/ISO-alpha-2 codes per call (not derived from the test qualifier string) to
+  avoid accidental collisions across test methods sharing one `ApiFactory` instance.
 
 ## Architecture principles
 
@@ -497,22 +575,29 @@ conflict since they resolve via different service types — don't collapse them 
 - Model: `Data/ApplicationDbContext.cs` (`IdentityDbContext<ApplicationUser, ApplicationRole, Guid>`),
   `Data/ApplicationUser.cs` (adds required `FirstName`/`LastName`), `Data/ApplicationRole.cs`,
   `Data/RefreshToken.cs`, `Data/Manufacturer.cs`, `Data/AircraftModel.cs`, `Data/Country.cs`,
-  `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`, `Data/ScheduleTemplate.cs`. Identity's
-  own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`, `Manufacturers`, `AircraftModels`
-  (the first FK relationship between two non-Identity entities — see "Aircraft Models" above), `Countries`,
-  `Airports` (FK to `Countries`), `SoftwareDevelopers`, `Aircraft` (FK to both `AircraftModels` and
-  `SoftwareDevelopers` — see "Aircraft" above), and `ScheduleTemplates` (FK to `Airports` twice plus
-  `Aircraft` once — see "Schedule Templates" above).
+  `Data/Airport.cs`, `Data/SoftwareDeveloper.cs`, `Data/Aircraft.cs`, `Data/ScheduleTemplate.cs`,
+  `Data/Schedule.cs`. Identity's own tables (`AspNetUsers`, `AspNetRoles`, etc.) plus `RefreshTokens`,
+  `Manufacturers`, `AircraftModels` (the first FK relationship between two non-Identity entities — see
+  "Aircraft Models" above), `Countries`, `Airports` (FK to `Countries`), `SoftwareDevelopers`, `Aircraft`
+  (FK to both `AircraftModels` and `SoftwareDevelopers` — see "Aircraft" above), `ScheduleTemplates` (FK to
+  `Airports` twice plus `Aircraft` once — see "Schedule Templates" above), and `Schedules` (FK to
+  `ScheduleTemplates` — see "Schedules" above).
 - Migrations live in `Data/Migrations/` (`InitialCreate`, `AddRefreshTokens`, `AddUserNames`,
   `AddManufacturers`, `AddAircraftModels`, `AddCountries`, `AddAirports`,
-  `AddSoftwareDevelopersAndAircraft`, `AddScheduleTemplates`). `AddSoftwareDevelopersAndAircraft` is a
-  single combined migration rather than two separate ones — both entities were added to
-  `ApplicationDbContext` in the same edit before either `migrations add` call, so a first
-  `AddSoftwareDevelopers` migration would have captured both tables' diff anyway, leaving a follow-up
+  `AddSoftwareDevelopersAndAircraft`, `AddScheduleTemplates`, `AddScheduleTemplateStartDateAndSchedules`).
+  `AddSoftwareDevelopersAndAircraft` is a single combined migration rather than two separate ones — both
+  entities were added to `ApplicationDbContext` in the same edit before either `migrations add` call, so a
+  first `AddSoftwareDevelopers` migration would have captured both tables' diff anyway, leaving a follow-up
   `AddAircraft` migration empty; add entities across separate edits+`migrations add` calls if a genuinely
   separate migration per entity is wanted (as `AddScheduleTemplates` did, being the only entity added in its
-  edit). `dotnet ef migrations add <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations`
-  (needs `Data/DesignTimeDbContextFactory.cs` since the context is registered via
+  edit). `AddScheduleTemplateStartDateAndSchedules` similarly bundles two changes made in one edit
+  (`ScheduleTemplate.StartDate` + the new `Schedule` entity) into one migration — adding a required column
+  to an already-shipped table is safe here since the dev `ScheduleTemplates` table is expected to be empty
+  at migration-apply time (Postgres would otherwise reject a `NOT NULL` column add with no default against
+  a non-empty table; EF generated a `DefaultValueSql`-free `AddColumn` with an implicit default here, so it
+  would still succeed even against existing rows, just backfilling them with `0001-01-01`). `dotnet ef
+  migrations add <Name> --project PilotsRUs.API.WebApi --output-dir Data/Migrations` (needs
+  `Data/DesignTimeDbContextFactory.cs` since the context is registered via
   `AddNpgsqlDbContext`/`AddDbContextFactory` rather than the classic `AddDbContext<T>(options => ...)`
   pattern EF tools auto-discover).
 - Applied automatically at startup, gated to `IsDevelopment()` (`Program.cs`) — no separate migrator

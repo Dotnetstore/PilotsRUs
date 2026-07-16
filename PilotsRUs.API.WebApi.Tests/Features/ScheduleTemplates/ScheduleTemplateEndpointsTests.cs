@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using PilotsRUs.API.WebApi.Data;
 using PilotsRUs.API.WebApi.Tests.Infrastructure;
 using PilotsRUs.Shared.SDK.AircraftModels;
 using PilotsRUs.Shared.SDK.Aircrafts;
@@ -25,6 +28,8 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         Converters = { new JsonStringEnumConverter() }
     };
 
+    private static readonly DateOnly TestStartDate = new(2026, 1, 1);
+
     [Fact]
     public async Task List_ReturnsCreatedScheduleTemplates()
     {
@@ -34,7 +39,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         var aircraft = await CreateAircraftAsync(client, "STList");
         await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST100", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1.5), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST100", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1.5), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
 
         var response = await client.GetAsync("/schedule-templates");
@@ -54,7 +59,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         var aircraft = await CreateAircraftAsync(client, "STGet");
         var createResponse = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST200", departure.Id, arrival.Id, aircraft.Id, 600, TimeSpan.FromHours(2), ScheduleFrequency.Weekly),
+            new CreateScheduleTemplateRequest("ST200", departure.Id, arrival.Id, aircraft.Id, 600, TimeSpan.FromHours(2), ScheduleFrequency.Weekly, TestStartDate),
             JsonOptions);
         var created = await createResponse.Content.ReadFromJsonAsync<ScheduleTemplateResponse>(JsonOptions);
 
@@ -76,7 +81,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST300", departure.Id, arrival.Id, aircraft.Id, 700, TimeSpan.FromHours(1), ScheduleFrequency.EveryThirdDay),
+            new CreateScheduleTemplateRequest("ST300", departure.Id, arrival.Id, aircraft.Id, 700, TimeSpan.FromHours(1), ScheduleFrequency.EveryThirdDay, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -86,6 +91,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         Assert.Equal(TimeSpan.FromHours(1), scheduleTemplate.FlightTime);
         Assert.Equal(ScheduleFrequency.EveryThirdDay, scheduleTemplate.Frequency);
         Assert.Equal(aircraft.RegistrationNumber, scheduleTemplate.AircraftRegistrationNumber);
+        Assert.Equal(TestStartDate, scheduleTemplate.StartDate);
     }
 
     [Fact]
@@ -97,7 +103,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST400", Guid.NewGuid(), arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST400", Guid.NewGuid(), arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -112,7 +118,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST500", departure.Id, Guid.NewGuid(), aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST500", departure.Id, Guid.NewGuid(), aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -127,7 +133,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST600", airport.Id, airport.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST600", airport.Id, airport.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -142,7 +148,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var response = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST700", departure.Id, arrival.Id, Guid.NewGuid(), 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST700", departure.Id, arrival.Id, Guid.NewGuid(), 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -157,13 +163,13 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         var aircraft = await CreateAircraftAsync(client, "STUpdate");
         var createResponse = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST800", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST800", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
         var created = await createResponse.Content.ReadFromJsonAsync<ScheduleTemplateResponse>(JsonOptions);
 
         var response = await client.PutAsJsonAsync(
             $"/schedule-templates/{created!.Id}",
-            new UpdateScheduleTemplateRequest("ST801", departure.Id, arrival.Id, aircraft.Id, 550, TimeSpan.FromHours(1.25), ScheduleFrequency.Weekly),
+            new UpdateScheduleTemplateRequest("ST801", departure.Id, arrival.Id, aircraft.Id, 550, TimeSpan.FromHours(1.25), ScheduleFrequency.Weekly, TestStartDate),
             JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -182,7 +188,7 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
         var aircraft = await CreateAircraftAsync(client, "STDelete");
         var createResponse = await client.PostAsJsonAsync(
             "/schedule-templates",
-            new CreateScheduleTemplateRequest("ST900", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily),
+            new CreateScheduleTemplateRequest("ST900", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
             JsonOptions);
         var created = await createResponse.Content.ReadFromJsonAsync<ScheduleTemplateResponse>(JsonOptions);
 
@@ -191,6 +197,47 @@ public sealed class ScheduleTemplateEndpointsTests(ApiFactory factory) : IClassF
 
         var getResponse = await client.GetAsync($"/schedule-templates/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_WithExistingSchedule_ReturnsConflict()
+    {
+        var (client, _) = await factory.CreateAuthenticatedClientAsync("scheduletemplates-delete-guard@pilotsrus.test", "P@ssw0rd123!");
+        var departure = await CreateAirportAsync(client, "ST Delete Guard Dep", "ZZTP", "XB");
+        var arrival = await CreateAirportAsync(client, "ST Delete Guard Arr", "ZZTQ", "XC");
+        var aircraft = await CreateAircraftAsync(client, "STDeleteGuard");
+        var createResponse = await client.PostAsJsonAsync(
+            "/schedule-templates",
+            new CreateScheduleTemplateRequest("ST950", departure.Id, arrival.Id, aircraft.Id, 500, TimeSpan.FromHours(1), ScheduleFrequency.Daily, TestStartDate),
+            JsonOptions);
+        var created = await createResponse.Content.ReadFromJsonAsync<ScheduleTemplateResponse>(JsonOptions);
+
+        var scheduleId = Guid.NewGuid();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+            await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+            dbContext.Schedules.Add(new Schedule { Id = scheduleId, ScheduleTemplateId = created!.Id, FlightDate = TestStartDate });
+            await dbContext.SaveChangesAsync();
+        }
+
+        var blockedResponse = await client.DeleteAsync($"/schedule-templates/{created!.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, blockedResponse.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            // Load + Remove + SaveChanges rather than ExecuteDeleteAsync, since the latter isn't supported
+            // by EF Core's InMemory provider used in these tests (same gotcha RefreshTokenService's
+            // family-revocation logic documents in CLAUDE.md).
+            var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+            await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+            var schedule = await dbContext.Schedules.FindAsync(scheduleId);
+            dbContext.Schedules.Remove(schedule!);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var allowedResponse = await client.DeleteAsync($"/schedule-templates/{created.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, allowedResponse.StatusCode);
     }
 
     [Fact]

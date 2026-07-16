@@ -61,7 +61,7 @@ public sealed class CreateModel(IHttpClientFactory httpClientFactory) : PageMode
             "/schedule-templates",
             new CreateScheduleTemplateRequest(
                 Input.FlightNumber, Input.DepartureAirportId, Input.ArrivalAirportId, Input.AircraftId,
-                Input.DistanceNauticalMiles, Input.FlightTime.ToTimeSpan(), Input.Frequency),
+                Input.DistanceNauticalMiles, Input.FlightTime.ToTimeSpan(), Input.Frequency, Input.StartDate),
             JsonOptions);
 
         if (response.IsSuccessStatusCode)
@@ -132,5 +132,8 @@ public sealed class CreateModel(IHttpClientFactory httpClientFactory) : PageMode
 
         [Required]
         public ScheduleFrequency Frequency { get; set; }
+
+        [Required, DataType(DataType.Date)]
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     }
 }
